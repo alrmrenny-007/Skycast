@@ -11,25 +11,46 @@
   .card { width: 100%; max-width: 380px; min-height: 640px; border-radius: 40px;
           color: #fff; padding: 24px; position: relative; overflow: hidden;
           display: flex; flex-direction: column; transition: background 1s; }
+  .card > * { position: relative; z-index: 1; }
   .day   { background: linear-gradient(180deg,#2a6fb0,#4a9be0 55%,#eaf2f8); }
   .night { background: linear-gradient(180deg,#4b4fa3,#8a6ab5 50%,#1f1a4d); }
+
+  /* stars */
+  .stars { position: absolute !important; inset: 0; z-index: 0 !important;
+           pointer-events: none; opacity: 0; transition: opacity 1.5s; }
+  .night .stars { opacity: 1; }
+  .star { position: absolute; background: #fff; border-radius: 50%;
+          animation: twinkle 3s ease-in-out infinite; }
+  @keyframes twinkle { 0%,100% { opacity: .15; } 50% { opacity: 1; } }
+
   form { display: flex; gap: 8px; }
   input { flex: 1; padding: 10px 16px; border-radius: 20px; border: 0;
-          background: rgba(255,255,255,.25); color: #fff; outline: none; }
+          background: rgba(255,255,255,.25); color: #fff; outline: none; font-size: 16px; }
   input::placeholder { color: rgba(255,255,255,.7); }
   button { border: 0; border-radius: 20px; padding: 10px 16px; cursor: pointer;
            background: rgba(255,255,255,.35); color: #fff; }
-  .place { text-align: center; margin-top: 18px; opacity: .9; }
-  svg { width: 100%; margin-top: 6px; }
+  .place { text-align: center; margin-top: 18px; opacity: .95; }
+  .msg { text-align: center; font-size: 13px; margin-top: 4px; min-height: 16px;
+         color: #ffd9d9; }
+  svg { width: 100%; margin-top: 2px; overflow: visible; }
+  #orb { filter: drop-shadow(0 0 8px rgba(255,255,255,.7)); }
   .temp { font-size: 76px; font-weight: 600; line-height: 1; margin-top: -10px; }
   .desc { opacity: .9; margin-top: 4px; }
-  .stats { display: flex; gap: 12px; margin-top: auto; }
+  .moon { opacity: .85; margin-top: 4px; font-size: 14px; display: none; }
+  .night .moon { display: block; }
+
+  .bottom { margin-top: auto; padding-top: 16px; }
+  .tip { display: none; margin-bottom: 12px; font-size: 14px; line-height: 1.4; }
+  .night .tip { display: block; }
+  .stats { display: flex; gap: 12px; }
   .glass { flex: 1; border-radius: 24px; padding: 16px;
            background: rgba(255,255,255,.2); backdrop-filter: blur(12px);
+           -webkit-backdrop-filter: blur(12px);
            border: 1px solid rgba(255,255,255,.25); }
   .day .glass { background: rgba(255,255,255,.85); color: #111; }
   .glass small { opacity: .7; display: block; }
-  .glass b { font-size: 30px; display: block; margin: 6px 0; }
+  .glass b { font-size: 34px; display: block; margin: 6px 0 2px; line-height: 1; }
+  .glass em { font-style: normal; font-size: 13px; opacity: .8; display: block; margin-bottom: 8px; min-height: 16px; }
   .bar { height: 8px; border-radius: 4px; position: relative;
          background: linear-gradient(90deg,#4cd964,#ffd60a,#ff9500,#a020f0,#8b0000); }
   .dot { position: absolute; top: -3px; width: 4px; height: 14px;
@@ -38,41 +59,98 @@
 </head>
 <body>
 <div class="card day" id="card">
+  <div class="stars" id="stars"></div>
+
   <form id="form">
     <input id="q" placeholder="Search a city">
     <button>Go</button>
   </form>
   <div class="place" id="place">Loading...</div>
+  <div class="msg" id="msg"></div>
 
   <svg viewBox="0 0 300 160">
     <path d="M20 150 Q150 -30 280 150" fill="none"
           stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="6 6"/>
-    <circle id="orb" r="14" cx="20" cy="150" fill="#ffc933"/>
+    <g id="orb" transform="translate(20,150)">
+      <circle id="sun" r="14" fill="#ffc933"/>
+      <circle id="moonBase" r="16" fill="rgba(20,20,60,.55)" style="display:none"/>
+      <path id="moonLit" fill="#f1f1fa" style="display:none"/>
+    </g>
   </svg>
 
   <div class="temp" id="temp">--°</div>
   <div class="desc" id="desc"></div>
+  <div class="moon" id="moon"></div>
 
-  <div class="stats">
-    <div class="glass">
-      <small>Air Quality</small><b id="aqi">--</b>
-      <div class="bar"><div class="dot" id="aqiDot"></div></div>
-    </div>
-    <div class="glass">
-      <small>Cloud Cover</small><b id="cloud">--</b>
-      <div class="bar" style="background:#6aa8ff;width:100%"></div>
+  <div class="bottom">
+    <div class="glass tip" id="tip"></div>
+    <div class="stats">
+      <div class="glass">
+        <small>Air Quality</small><b id="aqi">--</b><em id="aqiLabel"></em>
+        <div class="bar"><div class="dot" id="aqiDot" style="left:0"></div></div>
+      </div>
+      <div class="glass">
+        <small>Cloud Cover</small><b id="cloud">--</b><em>&nbsp;</em>
+        <div class="bar" style="background:#6aa8ff"></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-const codes = {0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',
-  51:'Light drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Snow',
-  80:'Showers',95:'Thunderstorm'};
+const codes = {0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Foggy',
+  51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',80:'Showers',81:'Showers',82:'Heavy showers',
+  95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
 
+let placeName = '';
+
+/* ---------- stars ---------- */
+(function makeStars() {
+  const box = $('stars');
+  for (let i = 0; i < 45; i++) {
+    const s = document.createElement('div');
+    const size = 1 + Math.random() * 2;
+    s.className = 'star';
+    s.style.width = s.style.height = size + 'px';
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 70 + '%';
+    s.style.animationDelay = (Math.random() * 3) + 's';
+    s.style.animationDuration = (2 + Math.random() * 3) + 's';
+    box.appendChild(s);
+  }
+})();
+
+/* ---------- moon ---------- */
+function moonPhase(date) {
+  const syn = 29.530588853;
+  const ref = Date.UTC(2000, 0, 6, 18, 14);
+  return (((date.getTime() - ref) / 86400000) % syn + syn) % syn / syn;
+}
+function moonName(p) {
+  if (p < 0.03 || p > 0.97) return 'New moon';
+  if (p < 0.22) return 'Waxing crescent';
+  if (p < 0.28) return 'First quarter';
+  if (p < 0.47) return 'Waxing gibbous';
+  if (p < 0.53) return 'Full moon';
+  if (p < 0.72) return 'Waning gibbous';
+  if (p < 0.78) return 'Last quarter';
+  return 'Waning crescent';
+}
+function moonPath(p, r) {
+  const rx = r * Math.abs(Math.cos(2 * Math.PI * p));
+  if (p < 0.5) {
+    const s = p < 0.25 ? 0 : 1;
+    return `M0 ${-r} A${r} ${r} 0 0 1 0 ${r} A${rx} ${r} 0 0 ${s} 0 ${-r} Z`;
+  }
+  const s = p < 0.75 ? 0 : 1;
+  return `M0 ${-r} A${r} ${r} 0 0 0 0 ${r} A${rx} ${r} 0 0 ${s} 0 ${-r} Z`;
+}
+
+/* ---------- helpers ---------- */
 function aqiLabel(v) {
-  return v <= 50 ? 'Good' : v <= 100 ? 'Moderate' : v <= 150 ? 'Unhealthy (sensitive)' : 'Unhealthy';
+  return v <= 50 ? 'Good' : v <= 100 ? 'Moderate' : v <= 150 ? 'Unhealthy for some' : 'Unhealthy';
 }
 function arcPoint(t) {
   const u = 1 - t;
@@ -89,33 +167,77 @@ function progress(d) {
   }
   return Math.min(1, Math.max(0, p));
 }
+function sleepTip(d) {
+  const rainy = [51,53,55,61,63,65,80,81,82,95,96,99].includes(d.code);
+  if (d.aqi != null && d.aqi > 100) return '😷 Air quality is poor tonight. Keep windows closed.';
+  if (rainy) return '🌧️ Rain outside, which makes great sleeping sounds.';
+  if (d.temp >= 28) return '🥵 Warm night. Keep the room cool and use a fan.';
+  if (d.temp <= 12) return '🧣 Chilly night. A warm blanket will help.';
+  if (d.cloud < 20) return '✨ Clear skies, a good night for stargazing before bed.';
+  return '😴 Calm and comfortable. Good conditions for sleep.';
+}
 
+/* ---------- main ---------- */
 async function load(lat, lon, name) {
-  const d = await (await fetch(`/api/weather?lat=${lat}&lon=${lon}`)).json();
-  if (d.error) { $('place').textContent = d.error; return; }
-  $('card').className = 'card ' + (d.isDay ? 'day' : 'night');
-  $('place').textContent = '📍 ' + name;
-  $('temp').textContent = d.temp + '°';
-  $('desc').textContent = (codes[d.code] || 'Weather') + ' · ' + d.now.slice(11);
-  const pt = arcPoint(progress(d));
-  $('orb').setAttribute('cx', pt.x);
-  $('orb').setAttribute('cy', pt.y);
-  $('orb').setAttribute('fill', d.isDay ? '#ffc933' : '#e8e8f5');
-  $('cloud').textContent = d.cloud + '%';
-  if (d.aqi != null) {
-    $('aqi').textContent = d.aqi + ' ' + aqiLabel(d.aqi);
-    $('aqiDot').style.left = Math.min(100, d.aqi / 3) + '%';
+  try {
+    const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+
+    placeName = name;
+    $('msg').textContent = '';
+    $('card').className = 'card ' + (d.isDay ? 'day' : 'night');
+    $('place').textContent = '📍 ' + name;
+    $('temp').textContent = d.temp + '°';
+    $('desc').textContent = (codes[d.code] || 'Weather') + ' · ' + d.now.slice(11);
+
+    const pt = arcPoint(progress(d));
+    $('orb').setAttribute('transform', `translate(${pt.x},${pt.y})`);
+
+    const p = moonPhase(new Date());
+    $('sun').style.display = d.isDay ? '' : 'none';
+    $('moonBase').style.display = d.isDay ? 'none' : '';
+    $('moonLit').style.display = d.isDay ? 'none' : '';
+    $('moonLit').setAttribute('d', moonPath(p, 16));
+    const lit = Math.round((1 - Math.cos(2 * Math.PI * p)) / 2 * 100);
+    $('moon').textContent = `🌙 ${moonName(p)} · ${lit}% lit`;
+
+    $('tip').textContent = sleepTip(d);
+    $('cloud').textContent = d.cloud + '%';
+    if (d.aqi != null) {
+      $('aqi').textContent = d.aqi;
+      $('aqiLabel').textContent = aqiLabel(d.aqi);
+      $('aqiDot').style.left = Math.min(96, d.aqi / 3) + '%';
+    } else {
+      $('aqi').textContent = '--';
+      $('aqiLabel').textContent = 'Not available';
+    }
+  } catch (e) {
+    if (placeName) $('msg').textContent = 'Could not load weather. Try again.';
+    else $('place').textContent = 'Could not load weather. Try searching a city.';
   }
 }
 
 async function search(text) {
-  const r = await fetch('/api/search?q=' + encodeURIComponent(text));
-  const p = await r.json();
-  if (p.error) { $('place').textContent = 'City not found'; return; }
-  load(p.lat, p.lon, p.name + ', ' + p.country);
+  try {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(text));
+    const p = await r.json();
+    if (p.error) {
+      $('msg').textContent = `Couldn't find "${text}". Check the spelling.`;
+      if (!placeName) $('place').textContent = 'Search for a city';
+      return;
+    }
+    load(p.lat, p.lon, p.name + ', ' + p.country);
+  } catch (e) {
+    $('msg').textContent = 'Search failed. Try again.';
+  }
 }
 
-$('form').onsubmit = e => { e.preventDefault(); if ($('q').value) search($('q').value); };
+$('form').onsubmit = e => {
+  e.preventDefault();
+  const v = $('q').value.trim();
+  if (v) search(v);
+};
 
 navigator.geolocation.getCurrentPosition(
   pos => load(pos.coords.latitude, pos.coords.longitude, 'Your location'),
