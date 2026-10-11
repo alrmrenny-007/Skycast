@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skycast</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, sans-serif; background: #eee;
+         display: flex; justify-content: center; padding: 16px; min-height: 100vh; }
+  .card { width: 100%; max-width: 380px; min-height: 640px; border-radius: 40px;
+          color: #fff; padding: 24px; position: relative; overflow: hidden;
+          display: flex; flex-direction: column; transition: background 1s; }
+  .day   { background: linear-gradient(180deg,#2a6fb0,#4a9be0 55%,#eaf2f8); }
+  .night { background: linear-gradient(180deg,#4b4fa3,#8a6ab5 50%,#1f1a4d); }
+  form { display: flex; gap: 8px; }
+  input { flex: 1; padding: 10px 16px; border-radius: 20px; border: 0;
+          background: rgba(255,255,255,.25); color: #fff; outline: none; }
+  input::placeholder { color: rgba(255,255,255,.7); }
+  button { border: 0; border-radius: 20px; padding: 10px 16px; cursor: pointer;
+           background: rgba(255,255,255,.35); color: #fff; }
+  .place { text-align: center; margin-top: 18px; opacity: .9; }
+  svg { width: 100%; margin-top: 6px; }
+  .temp { font-size: 76px; font-weight: 600; line-height: 1; margin-top: -10px; }
+  .desc { opacity: .9; margin-top: 4px; }
+  .stats { display: flex; gap: 12px; margin-top: auto; }
+  .glass { flex: 1; border-radius: 24px; padding: 16px;
+           background: rgba(255,255,255,.2); backdrop-filter: blur(12px);
+           border: 1px solid rgba(255,255,255,.25); }
+  .day .glass { background: rgba(255,255,255,.85); color: #111; }
+  .glass small { opacity: .7; display: block; }
+  .glass b { font-size: 30px; display: block; margin: 6px 0; }
+  .bar { height: 8px; border-radius: 4px; position: relative;
+         background: linear-gradient(90deg,#4cd964,#ffd60a,#ff9500,#a020f0,#8b0000); }
+  .dot { position: absolute; top: -3px; width: 4px; height: 14px;
+         background: #fff; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+</style>
+</head>
+<body>
+<div class="card day" id="card">
+  <form id="form">
+    <input id="q" placeholder="Search a city">
+    <button>Go</button>
+  </form>
+  <div class="place" id="place">Loading...</div>
+
+  <svg viewBox="0 0 300 160">
+    <path d="M20 150 Q150 -30 280 150" fill="none"
+          stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="6 6"/>
+    <circle id="orb" r="14" cx="20" cy="150" fill="#ffc933"/>
+  </svg>
+
+  <div class="temp" id="temp">--°</div>
+  <div class="desc" id="desc"></div>
+
+  <div class="stats">
+    <div class="glass">
+      <small>Air Quality</small><b id="aqi">--</b>
+      <div class="bar"><div class="dot" id="aqiDot"></div></div>
+    </div>
+    <div class="glass">
+      <small>Cloud Cover</small><b id="cloud">--</b>
+      <div class="bar" style="background:#6aa8ff;width:100%"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const codes = {0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',
+  51:'Light drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Snow',
+  80:'Showers',95:'Thunderstorm'};
+
+function aqiLabel(v) {
+  return v <= 50 ? 'Good' : v <= 100 ? 'Moderate' : v <= 150 ? 'Unhealthy (sensitive)' : 'Unhealthy';
+}
+function arcPoint(t) {
+  const u = 1 - t;
+  return { x: u*u*20 + 2*u*t*150 + t*t*280, y: u*u*150 + 2*u*t*-30 + t*t*150 };
+}
+function progress(d) {
+  const now = new Date(d.now), rise = new Date(d.sunrise), set = new Date(d.sunset);
+  const day = 86400000;
+  let p;
+  if (d.isDay) p = (now - rise) / (set - rise);
+  else {
+    const night = day - (set - rise);
+    p = now > set ? (now - set) / night : (now - (set - day)) / night;
+  }
+  return Math.min(1, Math.max(0, p));
+}
+
+async function load(lat, lon, name) {
+  const d = await (await fetch(`/api/weather?lat=${lat}&lon=${lon}`)).json();
+  if (d.error) { $('place').textContent = d.error; return; }
+  $('card').className = 'card ' + (d.isDay ? 'day' : 'night');
+  $('place').textContent = '📍 ' + name;
+  $('temp').textContent = d.temp + '°';
+  $('desc').textContent = (codes[d.code] || 'Weather') + ' · ' + d.now.slice(11);
+  const pt = arcPoint(progress(d));
+  $('orb').setAttribute('cx', pt.x);
+  $('orb').setAttribute('cy', pt.y);
+  $('orb').setAttribute('fill', d.isDay ? '#ffc933' : '#e8e8f5');
+  $('cloud').textContent = d.cloud + '%';
+  if (d.aqi != null) {
+    $('aqi').textContent = d.aqi + ' ' + aqiLabel(d.aqi);
+    $('aqiDot').style.left = Math.min(100, d.aqi / 3) + '%';
+  }
+}
+
+async function search(text) {
+  const r = await fetch('/api/search?q=' + encodeURIComponent(text));
+  const p = await r.json();
+  if (p.error) { $('place').textContent = 'City not found'; return; }
+  load(p.lat, p.lon, p.name + ', ' + p.country);
+}
+
+$('form').onsubmit = e => { e.preventDefault(); if ($('q').value) search($('q').value); };
+
+navigator.geolocation.getCurrentPosition(
+  pos => load(pos.coords.latitude, pos.coords.longitude, 'Your location'),
+  () => search('London')
+);
+</script>
+</body>
+</html>
