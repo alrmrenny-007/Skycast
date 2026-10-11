@@ -2,130 +2,338 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Skycast</title>
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { font-family: system-ui, sans-serif; background: #eee;
-         display: flex; justify-content: center; padding: 16px; min-height: 100vh; }
-  .card { width: 100%; max-width: 380px; min-height: 640px; border-radius: 40px;
-          color: #fff; padding: 24px; position: relative; overflow: hidden;
-          display: flex; flex-direction: column; transition: background 1s; }
-  .card > * { position: relative; z-index: 1; }
-  .day   { background: linear-gradient(180deg,#2a6fb0,#4a9be0 55%,#eaf2f8); }
-  .night { background: linear-gradient(180deg,#4b4fa3,#8a6ab5 50%,#1f1a4d); }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #0b0d14;
+         display: flex; justify-content: center; align-items: center; min-height: 100vh; min-height: 100dvh; }
 
-  /* stars */
-  .stars { position: absolute !important; inset: 0; z-index: 0 !important;
-           pointer-events: none; opacity: 0; transition: opacity 1.5s; }
-  .night .stars { opacity: 1; }
-  .star { position: absolute; background: #fff; border-radius: 50%;
-          animation: twinkle 3s ease-in-out infinite; }
+  .card { width: 100%; max-width: 430px; height: 100vh; height: 100dvh; max-height: 920px;
+          position: relative; overflow: hidden; display: flex; flex-direction: column;
+          color: var(--ink);
+          background: linear-gradient(180deg, var(--bg1), var(--bg2) 55%, var(--bg3)); }
+  @media (min-width: 520px) {
+    body { padding: 20px; }
+    .card { height: calc(100vh - 40px); height: calc(100dvh - 40px); max-height: 860px; border-radius: 46px;
+            box-shadow: 0 0 0 7px #10162a, 0 0 0 9px #2b3452, 0 30px 80px rgba(0,0,0,.6); }
+  }
+  .card > * { position: relative; z-index: 2; }
+  .card > .fx, .card > .stars, .card > .flash { position: absolute; inset: 0; pointer-events: none; }
+  .fx { z-index: 1; width: 100%; height: 100%; }
+  .stars { z-index: 0; opacity: 0; transition: opacity 1.5s; }
+  .flash { z-index: 5; background: #cfe3ff; opacity: 0; }
+
+  /* ---------- themes ---------- */
+  .card { --good:#34c98b; --mid:#f2b134; --bad:#ef6b6b; --wet:#5aa9ff; }
+  .light { --bg1:#4f9ae4; --bg2:#86bdf0; --bg3:#cfe5f8; --ink:#0f2340; --ink2:rgba(15,35,64,.62);
+           --panel:#b9d4ee; --dock:#9fc0e3; --well:rgba(20,50,100,.28); --chip:rgba(255,255,255,.6);
+           --chipBg: radial-gradient(circle at 30% 22%, rgba(255,255,255,.95), rgba(255,255,255,.45));
+           --chipSh: inset 0 1px 1px #fff, inset 0 -4px 8px rgba(40,80,140,.15), 0 6px 12px rgba(30,60,110,.2);
+           --glass:rgba(255,255,255,.55); --edge:rgba(255,255,255,.75); --err:#b3261e; }
+  .dark  { --bg1:#1d2757; --bg2:#27366f; --bg3:#34457f; --ink:#ffffff; --ink2:rgba(255,255,255,.64);
+           --panel:#43538a; --dock:#2d396b; --well:#141a36; --chip:rgba(255,255,255,.12);
+           --chipBg: radial-gradient(circle at 30% 22%, rgba(255,255,255,.30), rgba(255,255,255,.06) 62%);
+           --chipSh: inset 0 1px 1px rgba(255,255,255,.38), inset 0 -4px 8px rgba(0,0,0,.28), 0 6px 12px rgba(0,0,0,.28);
+           --glass:rgba(255,255,255,.09); --edge:rgba(255,255,255,.16); --err:#ffb4b4; }
+  .card.dark.rainy.isnight { --bg1:#2b3977; --bg2:#202c5d; --bg3:#2a3868; --panel:#44548a; --dock:#2c386a; }
+  .card.dark.cold.isnight  { --bg1:#242b3c; --bg2:#2f384e; --bg3:#3b455f; --panel:#4b5877; --dock:#364059; --well:#1b2132; }
+  .card.dark:not(.isnight) { --bg1:#34456f; --bg2:#42557f; --bg3:#566a94; --panel:#566b97; --dock:#425683; }
+  .card.light.cold { --bg1:#8fb9e0; --bg2:#bcd9f0; --bg3:#eef6fc; --panel:#cfe3f4; --dock:#b3cfe8; }
+
+  .starry .stars { opacity: 1; }
+  .star { position: absolute; background: #fff; border-radius: 50%; animation: twinkle 3s ease-in-out infinite; }
   @keyframes twinkle { 0%,100% { opacity: .15; } 50% { opacity: 1; } }
+  .storm .flash { animation: flash 7s infinite; }
+  @keyframes flash { 0%,90%,100% { opacity: 0; } 91% { opacity: .5; } 92% { opacity: .05; }
+                     93% { opacity: .6; } 96% { opacity: 0; } }
 
-  form { display: flex; gap: 8px; }
-  input { flex: 1; padding: 10px 16px; border-radius: 20px; border: 0;
-          background: rgba(255,255,255,.25); color: #fff; outline: none; font-size: 16px; }
-  input::placeholder { color: rgba(255,255,255,.7); }
-  button { border: 0; border-radius: 20px; padding: 10px 16px; cursor: pointer;
-           background: rgba(255,255,255,.35); color: #fff; }
-  .place { text-align: center; margin-top: 18px; opacity: .95; }
-  .msg { text-align: center; font-size: 13px; margin-top: 4px; min-height: 16px;
-         color: #ffd9d9; }
-  svg { width: 100%; margin-top: 2px; overflow: visible; }
-  #orb { filter: drop-shadow(0 0 8px rgba(255,255,255,.7)); }
-  .temp { font-size: 76px; font-weight: 600; line-height: 1; margin-top: -10px; }
-  .desc { opacity: .9; margin-top: 4px; }
-  .moon { opacity: .85; margin-top: 4px; font-size: 14px; display: none; }
-  .night .moon { display: block; }
+  /* ---------- status + header ---------- */
+  .status { display: flex; justify-content: space-between; align-items: center;
+            padding: calc(env(safe-area-inset-top) + 14px) 26px 0; font-size: 13px; font-weight: 600; }
+  .badge { font-size: 10px; padding: 3px 9px; border-radius: 12px; background: var(--chip); font-weight: 600; }
+  .badge:empty { display: none; }
+  .badge[data-src="mock"], .badge[data-src="mixed"] { background: var(--mid); color: #08121f; }
 
-  .bottom { margin-top: auto; padding-top: 16px; }
-  .tip { display: none; margin-bottom: 12px; font-size: 14px; line-height: 1.4; }
-  .night .tip { display: block; }
-  .stats { display: flex; gap: 12px; }
-  .glass { flex: 1; border-radius: 24px; padding: 16px;
-           background: rgba(255,255,255,.2); backdrop-filter: blur(12px);
-           -webkit-backdrop-filter: blur(12px);
-           border: 1px solid rgba(255,255,255,.25); }
-  .day .glass { background: rgba(255,255,255,.85); color: #111; }
-  .glass small { opacity: .7; display: block; }
-  .glass b { font-size: 34px; display: block; margin: 6px 0 2px; line-height: 1; }
-  .glass em { font-style: normal; font-size: 13px; opacity: .8; display: block; margin-bottom: 8px; min-height: 16px; }
-  .bar { height: 8px; border-radius: 4px; position: relative;
-         background: linear-gradient(90deg,#4cd964,#ffd60a,#ff9500,#a020f0,#8b0000); }
-  .dot { position: absolute; top: -3px; width: 4px; height: 14px;
-         background: #fff; border-radius: 2px; box-shadow: 0 0 4px #0008; }
+  .head { text-align: center; padding: 10px 22px 0; }
+  .city { background: none; border: 0; color: var(--ink); opacity: .85; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+  .city span[aria-hidden] { font-size: 10px; opacity: .6; }
+  .msg { font-size: 12px; min-height: 0; color: var(--err); }
+  .msg:not(:empty) { min-height: 16px; margin-top: 2px; }
+  .temp { font-size: 46px; font-weight: 700; letter-spacing: -1px; line-height: 1.1; }
+  .search { display: flex; gap: 8px; margin: 8px 0 4px; }
+  .search input { flex: 1; min-width: 0; padding: 10px 16px; border-radius: 20px; font-size: 16px; outline: none;
+                  border: 1px solid rgba(255,255,255,.15); background: var(--chip); color: var(--ink); }
+  .search input::placeholder { color: var(--ink2); }
+  .search button { border: 0; border-radius: 20px; padding: 10px 14px; cursor: pointer; background: var(--chip); color: var(--ink); }
+  .card:not([data-view="weather"]) .temp { font-size: 28px; }
+
+  .views { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .views::-webkit-scrollbar { display: none; }
+  .view { flex: 1 0 auto; display: flex; flex-direction: column; }
+  .view.pad { padding: 8px 16px 20px; gap: 12px; }
+
+  /* ---------- weather ---------- */
+  .hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 22px; text-align: center; }
+  #big .ic { width: 210px; height: 210px; animation: floaty 5s ease-in-out infinite;
+             filter: drop-shadow(0 16px 18px rgba(0,0,0,.4)); }
+  .light #big .ic { filter: drop-shadow(0 12px 12px rgba(20,40,90,.28)); }
+  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+  .cap { font-size: 13px; color: var(--ink2); margin-top: 2px; }
+  .tip { display: none; font-size: 12px; color: var(--ink2); margin-top: 6px; opacity: .85; }
+  .isnight .tip { display: block; }
+
+  .ic { display: block; }
+  #big .drop { animation: drip 1.2s linear infinite; }
+  @keyframes drip { 0% { transform: translateY(-4px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(16px); opacity: 0; } }
+  #big .flake { animation: fall 2.6s linear infinite; }
+  @keyframes fall { 0% { transform: translateY(-4px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+  .bolt { filter: drop-shadow(0 0 6px #6ab6ff); }
+  #big .bolt { animation: zap 2.6s infinite; }
+  @keyframes zap { 0%,55%,100% { opacity: 1; } 60% { opacity: .25; } 65% { opacity: 1; } 70% { opacity: .4; } }
+
+  .panel { margin-top: auto; }
+  .hill { display: block; width: 100%; height: 60px; margin-bottom: -1px; overflow: visible; }
+  .hill .fillp { fill: var(--panel); }
+  .snowcap, .dripcap { display: none; }
+  .cold .snowcap { display: block; filter: drop-shadow(0 1px 1px rgba(0,40,90,.3)); }
+  .rainy:not(.cold) .dripcap { display: block; }
+  .dr { animation: dripDown 3s ease-in-out infinite; }
+  @keyframes dripDown { 0%,100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+  .panelBody { background: var(--panel); padding: 2px 16px 22px; }
+  .ph { margin-bottom: 14px; }
+  .lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink2); }
+  .scroller { display: flex; gap: 14px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 8px; }
+  .scroller::-webkit-scrollbar { display: none; }
+  .it { min-width: 54px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .lb { font-size: 12px; color: var(--ink); opacity: .85; }
+  .chip { width: 48px; height: 48px; border-radius: 50%; background: var(--chipBg); box-shadow: var(--chipSh);
+          display: flex; align-items: center; justify-content: center; }
+  .chip .ic { width: 32px; height: 32px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
+  .tp { font-size: 12px; color: var(--ink2); }
+
+  /* ---------- dock ---------- */
+  .dock { display: flex; align-items: center; justify-content: space-between; z-index: 4 !important;
+          padding: 14px 26px calc(14px + env(safe-area-inset-bottom)); background: var(--dock);
+          border-radius: 28px 28px 0 0; margin-top: -10px;
+          box-shadow: 0 -1px 0 rgba(255,255,255,.10), 0 -10px 24px rgba(0,0,0,.18); }
+  .dbtn { width: 46px; height: 46px; border-radius: 50%; border: 0; cursor: pointer; color: var(--ink2);
+          background: var(--chipBg); box-shadow: var(--chipSh); display: flex; align-items: center; justify-content: center; }
+  .dbtn[aria-pressed="true"] { color: var(--ink); box-shadow: var(--chipSh), 0 0 0 2px var(--ink2); }
+  .dbtn:focus-visible, .half:focus-visible, .bar:focus-visible, .city:focus-visible { outline: 2px solid var(--ink); }
+  .toggle { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .pillwrap { position: relative; width: 92px; height: 30px; border-radius: 15px; background: var(--well);
+              box-shadow: inset 0 2px 5px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.08); }
+  .thumb { position: absolute; top: 3px; left: 3px; width: 42px; height: 24px; border-radius: 12px;
+           background: linear-gradient(180deg, #eef1ff, #a9b5dc); box-shadow: 0 2px 4px rgba(0,0,0,.35);
+           transition: transform .25s, opacity .25s; }
+  .thumb::after { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 3px;
+                  margin: -1.5px 0 0 -6px; border-radius: 2px; background: rgba(30,40,80,.4); }
+  .toggle.week .thumb { transform: translateX(44px); }
+  .toggle.away .thumb { opacity: .35; }
+  .half { position: absolute; top: 0; width: 50%; height: 100%; border: 0; background: transparent; cursor: pointer; }
+  .half[data-m="day"] { left: 0; } .half[data-m="week"] { right: 0; }
+  .tlabels { font-size: 9px; letter-spacing: 1.5px; color: var(--ink2); font-weight: 600; }
+  .tlabels span { opacity: .55; } .tlabels span.on { opacity: 1; color: var(--ink); }
+  .toggle.away .tlabels span.on { opacity: .55; }
+
+  /* ---------- shared glass UI (Garden + Run) ---------- */
+  .vh h2 { font-size: 20px; padding: 0 4px; }
+  .glass { background: var(--glass); border: 1px solid var(--edge); border-radius: 22px; padding: 16px;
+           backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%);
+           box-shadow: 0 8px 28px rgba(0,0,0,.14); }
+  .glass h3 { font-size: 14px; color: var(--ink2); font-weight: 600; margin-bottom: 10px; }
+  .glass h4 { font-size: 12px; color: var(--ink2); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin: 12px 0 6px; }
+  .kicker { font-size: 12px; color: var(--ink2); text-transform: uppercase; letter-spacing: .5px; }
+  .big { font-size: 30px; font-weight: 700; margin: 2px 0 6px; letter-spacing: -.5px; }
+  .glass .sub { font-size: 13px; color: var(--ink2); }
+  .note { font-size: 13px; color: var(--ink2); line-height: 1.4; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .row h3 { margin: 0; color: var(--ink); font-size: 16px; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #08121f; }
+  .pill.good { background: var(--good); } .pill.mid { background: var(--mid); } .pill.bad { background: var(--bad); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); margin-bottom: 10px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .legend .good { background: var(--good); } .legend .mid { background: var(--mid); } .legend .bad { background: var(--bad); }
+  .strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .strip::-webkit-scrollbar { display: none; }
+  .bar { flex: 0 0 32px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0;
+         color: var(--ink2); cursor: pointer; padding: 4px 0; border-radius: 12px; font-size: 11px; }
+  .bar[aria-pressed="true"] { background: rgba(255,255,255,.2); color: var(--ink); font-weight: 700; }
+  .track { width: 22px; height: 72px; display: flex; align-items: flex-end; border-radius: 8px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .fill { width: 100%; border-radius: 8px 8px 0 0; transition: height .4s; }
+  .bar.good .fill { background: var(--good); } .bar.mid .fill { background: var(--mid); } .bar.bad .fill { background: var(--bad); }
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tiles.t3 { grid-template-columns: repeat(3, 1fr); }
+  .tile { padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,.12); border-left: 4px solid var(--good); }
+  .tile.warn { border-color: var(--mid); } .tile.bad { border-color: var(--bad); } .tile.wet { border-color: var(--wet); }
+  .tile small { display: block; font-size: 11px; color: var(--ink2); }
+  .tile b { display: block; font-size: 20px; margin: 2px 0; }
+  .tile em { display: block; font-style: normal; font-size: 11px; color: var(--ink2); }
+  .list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.35; }
+  .list li { padding-left: 16px; position: relative; }
+  .list li::before { content: ""; position: absolute; left: 2px; top: .55em; width: 6px; height: 6px; border-radius: 50%; background: var(--ink2); }
+  .hyd { font-size: 14px; } .hyd b { font-size: 22px; }
+  .tiles + .list, .tiles + .note { margin-top: 12px; }
+  .alert { display: flex; gap: 14px; align-items: center; border-left: 5px solid var(--good); }
+  .alert[data-status="skip"] { border-left-color: var(--wet); }
+  .alert[data-status="water"] { border-left-color: var(--mid); }
+  .alert .ico { font-size: 34px; }
+  .alert .head2 { font-size: 16px; font-weight: 700; line-height: 1.3; }
+  .alert .sub2 { font-size: 12px; color: var(--ink2); margin-top: 4px; }
+  .gauge { position: relative; height: 10px; border-radius: 6px; margin: 12px 0 4px;
+           background: linear-gradient(90deg, #f2b134 0%, #f2b134 36%, #34c98b 44%, #34c98b 66%, #5aa9ff 74%, #5aa9ff 100%); }
+  .gauge i { position: absolute; top: -4px; width: 6px; height: 18px; border-radius: 3px; background: #fff; box-shadow: 0 0 4px #0009; }
+  .gl { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink2); margin-bottom: 12px; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
 <body>
-<div class="card day" id="card">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <radialGradient id="sphereW" cx=".35" cy=".28" r=".85">
+    <stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#e9eefc"/>
+    <stop offset=".8" stop-color="#b9c5e6"/><stop offset="1" stop-color="#8e9cc8"/></radialGradient>
+  <radialGradient id="sphereD" cx=".35" cy=".28" r=".85">
+    <stop offset="0" stop-color="#7a86ae"/><stop offset=".6" stop-color="#4a557d"/><stop offset="1" stop-color="#323c5f"/></radialGradient>
+  <linearGradient id="baseW" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f7ff"/><stop offset="1" stop-color="#a7b4da"/></linearGradient>
+  <linearGradient id="baseD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7b87ad"/><stop offset="1" stop-color="#3a4468"/></linearGradient>
+  <radialGradient id="glowB"><stop offset="0" stop-color="#5096ff" stop-opacity=".7"/><stop offset="1" stop-color="#5096ff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="sunGrad" cx=".35" cy=".3" r=".8">
+    <stop offset="0" stop-color="#fff4b8"/><stop offset=".55" stop-color="#ffc23d"/><stop offset="1" stop-color="#ff981a"/></radialGradient>
+  <radialGradient id="sunGlow"><stop offset="0" stop-color="#ffc43c" stop-opacity=".45"/><stop offset="1" stop-color="#ffc43c" stop-opacity="0"/></radialGradient>
+  <radialGradient id="moonGrad" cx=".3" cy=".3" r=".9">
+    <stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#e4eaff"/><stop offset="1" stop-color="#aebbe4"/></radialGradient>
+  <radialGradient id="moonGlow"><stop offset="0" stop-color="#c3cfff" stop-opacity=".32"/><stop offset="1" stop-color="#c3cfff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="dropGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe3ff"/><stop offset="1" stop-color="#4a90ff"/></linearGradient>
+  <linearGradient id="boltGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d8f0ff"/><stop offset="1" stop-color="#3d8bff"/></linearGradient>
+</defs></svg>
+
+<div class="card light" id="card" data-view="weather">
+  <canvas class="fx" id="fx"></canvas>
   <div class="stars" id="stars"></div>
+  <div class="flash"></div>
 
-  <form id="form">
-    <input id="q" placeholder="Search a city">
-    <button>Go</button>
-  </form>
-  <div class="place" id="place">Loading...</div>
-  <div class="msg" id="msg"></div>
+  <header class="status">
+    <time id="stime">--:--</time>
+    <span class="badge" data-badge></span>
+  </header>
 
-  <svg viewBox="0 0 300 160">
-    <path d="M20 150 Q150 -30 280 150" fill="none"
-          stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="6 6"/>
-    <g id="orb" transform="translate(20,150)">
-      <circle id="sun" r="14" fill="#ffc933"/>
-      <circle id="moonBase" r="16" fill="rgba(20,20,60,.55)" style="display:none"/>
-      <path id="moonLit" fill="#f1f1fa" style="display:none"/>
-    </g>
-  </svg>
-
-  <div class="temp" id="temp">--°</div>
-  <div class="desc" id="desc"></div>
-  <div class="moon" id="moon"></div>
-
-  <div class="bottom">
-    <div class="glass tip" id="tip"></div>
-    <div class="stats">
-      <div class="glass">
-        <small>Air Quality</small><b id="aqi">--</b><em id="aqiLabel"></em>
-        <div class="bar"><div class="dot" id="aqiDot" style="left:0"></div></div>
-      </div>
-      <div class="glass">
-        <small>Cloud Cover</small><b id="cloud">--</b><em>&nbsp;</em>
-        <div class="bar" style="background:#6aa8ff"></div>
-      </div>
-    </div>
+  <div class="head">
+    <button class="city" id="city" aria-expanded="false" aria-controls="form"><span id="cityName">Loading…</span> <span aria-hidden="true">▾</span></button>
+    <div class="msg" id="msg" role="status"></div>
+    <form class="search" id="form" hidden>
+      <input id="q" placeholder="Search a city" aria-label="Search a city">
+      <button type="submit">Go</button>
+      <button type="button" id="locBtn" aria-label="Use my location">📍</button>
+    </form>
+    <div class="temp" id="temp">--°</div>
   </div>
+
+  <main class="views" id="views">
+
+    <!-- WEATHER -->
+    <section class="view" id="view-weather" aria-label="Weather">
+      <div class="hero">
+        <div id="big"></div>
+        <p class="cap" id="cap"></p>
+        <p class="tip" id="tip"></p>
+      </div>
+      <div class="panel" id="panel">
+        <div id="hillBox"></div>
+        <div class="panelBody">
+          <div class="ph"><span class="lbl" id="fLbl">Forecast</span></div>
+          <div class="scroller" id="scroller"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GARDEN -->
+    <section class="view pad" id="view-garden" aria-label="Garden planner" hidden>
+      <header class="vh"><h2>Garden planner</h2></header>
+      <article class="glass alert" id="irrAlert" data-status="ok" aria-live="polite"></article>
+      <article class="glass" id="soilCard"></article>
+      <article class="glass" id="plantBest"></article>
+      <article class="glass">
+        <h3>Planting hours</h3>
+        <div class="legend"><span><i class="good"></i>Ideal</span><span><i class="mid"></i>Okay</span><span><i class="bad"></i>Avoid</span></div>
+        <div class="strip" id="plantStrip" role="group" aria-label="Hourly planting rating"></div>
+      </article>
+      <article class="glass" id="plantDetail"></article>
+      <article class="glass" id="sowNote"></article>
+    </section>
+
+    <!-- RUN -->
+    <section class="view pad" id="view-run" aria-label="Run and fitness" hidden>
+      <header class="vh"><h2>Run &amp; fitness</h2></header>
+      <article class="glass" id="runBest"></article>
+      <article class="glass">
+        <h3>Hourly rating</h3>
+        <div class="legend"><span><i class="good"></i>Great</span><span><i class="mid"></i>Fair</span><span><i class="bad"></i>Poor</span></div>
+        <div class="strip" id="runStrip" role="group" aria-label="Hourly run rating"></div>
+      </article>
+      <article class="glass" id="runDetail"></article>
+      <article class="glass" id="runGear"></article>
+    </section>
+
+  </main>
+
+  <footer class="dock">
+    <button class="dbtn" data-go="garden" aria-label="Garden planner" aria-controls="view-garden" aria-pressed="false">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-8"/><path d="M12 13c0-4-3-6-7-6 0 4 2 6 7 6z"/><path d="M12 11c0-3.5 2.5-5.5 7-5.5 0 4-2.5 5.5-7 5.5z"/></svg>
+    </button>
+    <div class="toggle" id="toggle" role="group" aria-label="Forecast range">
+      <div class="pillwrap">
+        <span class="thumb"></span>
+        <button class="half" data-m="day" aria-label="Day forecast" aria-pressed="true"></button>
+        <button class="half" data-m="week" aria-label="Week forecast" aria-pressed="false"></button>
+      </div>
+      <div class="tlabels" id="tlabels"><span data-l="day" class="on">DAY</span> / <span data-l="week">WEEK</span></div>
+    </div>
+    <button class="dbtn" data-go="run" aria-label="Run and fitness" aria-controls="view-run" aria-pressed="false">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
+    </button>
+  </footer>
 </div>
 
+<script src="/ratings.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const codes = {0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Foggy',
-  51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',
-  71:'Light snow',73:'Snow',75:'Heavy snow',80:'Showers',81:'Showers',82:'Heavy showers',
-  95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
+const R = window.Ratings;
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let placeName = '';
+const RAIN = [51,53,55,56,57,61,63,65,66,67,80,81,82];
+const SNOW = [71,73,75,77,85,86];
+const STORM = [95,96,99];
+const NAMES = {0:'Clear sky',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Foggy',
+  51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',56:'Freezing drizzle',57:'Freezing drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Freezing rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Showers',81:'Showers',
+  82:'Heavy showers',85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunderstorm',99:'Thunderstorm'};
+const ICON_CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const ICON_CAL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
 
-/* ---------- stars ---------- */
-(function makeStars() {
-  const box = $('stars');
-  for (let i = 0; i < 45; i++) {
-    const s = document.createElement('div');
-    const size = 1 + Math.random() * 2;
-    s.className = 'star';
-    s.style.width = s.style.height = size + 'px';
-    s.style.left = Math.random() * 100 + '%';
-    s.style.top = Math.random() * 70 + '%';
-    s.style.animationDelay = (Math.random() * 3) + 's';
-    s.style.animationDuration = (2 + Math.random() * 3) + 's';
-    box.appendChild(s);
-  }
-})();
+let placeName = '', data = null, mode = 'day', curPhase = 0;
 
-/* ---------- moon ---------- */
+function kindOf(c) {
+  if (c <= 1) return 'clear';
+  if (c === 2) return 'partly';
+  if (c === 3) return 'cloud';
+  if (c === 45 || c === 48) return 'fog';
+  if (RAIN.includes(c)) return 'rain';
+  if (SNOW.includes(c)) return 'snow';
+  if (STORM.includes(c)) return 'storm';
+  return 'cloud';
+}
+
+/* =========================================================
+   MODULE: moon
+   ========================================================= */
 function moonPhase(date) {
-  const syn = 29.530588853;
-  const ref = Date.UTC(2000, 0, 6, 18, 14);
+  const syn = 29.530588853, ref = Date.UTC(2000, 0, 6, 18, 14);
   return (((date.getTime() - ref) / 86400000) % syn + syn) % syn / syn;
 }
 function moonName(p) {
@@ -148,101 +356,493 @@ function moonPath(p, r) {
   return `M0 ${-r} A${r} ${r} 0 0 0 0 ${r} A${rx} ${r} 0 0 ${s} 0 ${-r} Z`;
 }
 
-/* ---------- helpers ---------- */
+/* =========================================================
+   MODULE: clay-style weather icons
+   ========================================================= */
+function cloud(v, tf) {
+  const s = v === 'd' ? 'sphereD' : 'sphereW', b = v === 'd' ? 'baseD' : 'baseW';
+  return `<g transform="${tf || ''}"><rect x="24" y="72" width="78" height="22" rx="11" fill="url(#${b})"/>` +
+    `<circle cx="32" cy="72" r="20" fill="url(#${s})"/><circle cx="54" cy="52" r="26" fill="url(#${s})"/>` +
+    `<circle cx="80" cy="60" r="22" fill="url(#${s})"/><circle cx="92" cy="77" r="16" fill="url(#${s})"/></g>`;
+}
+function sunShape(cx, cy, r) {
+  return `<circle cx="${cx}" cy="${cy}" r="${r * 1.8}" fill="url(#sunGlow)"/>` +
+         `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#sunGrad)"/>`;
+}
+function moonShape(cx, cy, r, p) {
+  return `<g transform="translate(${cx},${cy})"><circle r="${r * 1.9}" fill="url(#moonGlow)"/>` +
+         `<circle r="${r}" fill="rgba(150,165,215,.12)"/><path d="${moonPath(p, r)}" fill="url(#moonGrad)"/></g>`;
+}
+function drops(list) {
+  return list.map(([x, y, d]) => `<g transform="translate(${x},${y})"><path class="drop" style="animation-delay:${d}s" ` +
+    `d="M0 0C-5 7-5 12 0 12C5 12 5 7 0 0Z" fill="url(#dropGrad)"/></g>`).join('');
+}
+function icon(kind, isDay, p) {
+  let s = '';
+  if (kind === 'clear') s = isDay ? sunShape(60, 60, 28) : moonShape(60, 62, 32, p);
+  else if (kind === 'partly') s = isDay
+    ? sunShape(44, 44, 22) + cloud('w', 'translate(14,18) scale(.85)')
+    : moonShape(46, 68, 28, p) + cloud('d', 'translate(54,2) scale(.55)');
+  else if (kind === 'cloud') s = cloud('d', 'translate(-2,-14) scale(.75)') + cloud('w', 'translate(8,10) scale(.88)');
+  else if (kind === 'fog') s = cloud('w', 'translate(0,-12) scale(.92)') +
+    `<rect x="30" y="86" width="60" height="6" rx="3" fill="rgba(255,255,255,.75)"/>` +
+    `<rect x="40" y="98" width="50" height="6" rx="3" fill="rgba(255,255,255,.75)"/>`;
+  else if (kind === 'rain') s = cloud('w', 'translate(2,-14) scale(.96)') + drops([[40,84,0],[58,92,.4],[76,84,.8],[92,92,.2]]);
+  else if (kind === 'storm') s = `<ellipse cx="60" cy="92" rx="36" ry="14" fill="url(#glowB)"/>` +
+    `<polygon class="bolt" points="66,66 50,94 62,94 56,116 84,84 70,84 80,66" fill="url(#boltGrad)"/>` +
+    cloud('w', 'translate(2,-14) scale(.96)') + drops([[36,86,0],[88,86,.5]]);
+  else if (kind === 'snow') {
+    s = cloud('w', 'translate(2,-14) scale(.96)');
+    [[40,90,0],[60,100,.8],[82,90,1.6]].forEach(([x, y, d]) => {
+      s += `<circle class="flake" style="animation-delay:${d}s" cx="${x}" cy="${y}" r="4.5" fill="#fff"/>`;
+    });
+  }
+  return `<svg viewBox="0 0 120 120" class="ic" aria-hidden="true">${s}</svg>`;
+}
+
+/* ---------- hill: rim light, snow cap + icicles, rain drips ---------- */
+(function makeHill() {
+  const W = 380, H = 70;
+  const y = x => 26 + 9 * Math.sin(x / W * Math.PI * 1.8 + .4) + 4 * Math.sin(x / W * Math.PI * 4.6 + 1.3);
+  const all = [];
+  for (let x = 0; x <= W; x += 4) all.push([x, y(x)]);
+  const toPath = pts => 'M' + pts.map(p => p[0] + ',' + p[1].toFixed(1)).join(' L');
+  const line = toPath(all), right = all.filter(p => p[0] >= W * 0.55);
+  let bumps = '';
+  for (let x = W * 0.55; x <= W; x += 11) {
+    bumps += `<circle cx="${x.toFixed(0)}" cy="${(y(x) - 1.5 - ((x * 7) % 3)).toFixed(1)}" r="${(4 + ((x * 3) % 3)).toFixed(1)}" fill="#fff"/>`;
+  }
+  let ice = '';
+  [292, 312, 334, 352, 372].forEach((x, i) => {
+    const yy = y(x) + 3, len = 9 + (i % 3) * 5;
+    ice += `<path d="M${x - 3},${yy} L${x + 3},${yy} L${x},${yy + len}Z" fill="#eaf5ff"/>`;
+  });
+  let drips = '';
+  [300, 332, 362].forEach((x, i) => {
+    const yy = y(x) + 2;
+    drips += `<g class="dr" style="animation-delay:${i * .8}s"><ellipse cx="${x}" cy="${yy}" rx="5" ry="3" fill="#bcd9ff"/>` +
+             `<path d="M${x - 3},${yy} L${x + 3},${yy} L${x},${yy + 13}Z" fill="#9fc8ff"/></g>`;
+  });
+  $('hillBox').innerHTML =
+    `<svg class="hill" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    `<path class="fillp" d="${line} L${W},${H} L0,${H}Z"/>` +
+    `<path d="${line}" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>` +
+    `<g class="snowcap"><path d="${toPath(right)}" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>${bumps}${ice}</g>` +
+    `<g class="dripcap">${drips}</g></svg>`;
+})();
+
+/* ---------- stars ---------- */
+(function makeStars() {
+  const box = $('stars');
+  for (let i = 0; i < 45; i++) {
+    const s = document.createElement('div'), size = 1 + Math.random() * 2;
+    s.className = 'star';
+    s.style.width = s.style.height = size + 'px';
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 55 + '%';
+    s.style.animationDelay = Math.random() * 3 + 's';
+    s.style.animationDuration = (2 + Math.random() * 3) + 's';
+    box.appendChild(s);
+  }
+})();
+
+/* =========================================================
+   MODULE: falling rain / snow
+   ========================================================= */
+const cv = $('fx'), cx = cv.getContext('2d');
+let fxMode = null, parts = [], raf = 0, last = 0, W = 0, H = 0, limit = 0;
+
+function size() {
+  const card = $('card').getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = card.width; H = card.height;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // on the weather view precipitation stops at the hill; on other views it falls behind the glass cards
+  limit = Tabs.active === 'weather' ? $('panel').getBoundingClientRect().top - card.top + 24 : H;
+}
+function spawn(init) {
+  const x = Math.random() * W, y = init ? Math.random() * limit : -20;
+  if (fxMode === 'rain') return { x, y, v: 11 + Math.random() * 9, l: 10 + Math.random() * 14 };
+  return { x, y, v: .8 + Math.random() * 1.4, r: 1 + Math.random() * 2.4, ph: Math.random() * 6.28 };
+}
+function setFx(m, n) {
+  fxMode = m; size(); parts = [];
+  if (!m || reduce) { cancelAnimationFrame(raf); raf = 0; cx.clearRect(0, 0, W, H); return; }
+  for (let i = 0; i < n; i++) parts.push(spawn(true));
+  if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); }
+}
+function tick(t) {
+  const dt = Math.min(2.5, (t - last) / 16.67); last = t;
+  cx.clearRect(0, 0, W, H);
+  if (fxMode === 'rain') {
+    cx.strokeStyle = 'rgba(190,212,255,.5)'; cx.lineWidth = 1.3; cx.lineCap = 'round'; cx.beginPath();
+    for (const p of parts) {
+      p.y += p.v * dt; p.x -= p.v * .12 * dt;
+      cx.moveTo(p.x, p.y); cx.lineTo(p.x - p.l * .12, p.y + p.l);
+      if (p.y > limit) Object.assign(p, spawn(false));
+    }
+    cx.stroke();
+  } else if (fxMode === 'snow') {
+    cx.fillStyle = 'rgba(255,255,255,.92)';
+    for (const p of parts) {
+      p.y += p.v * dt; p.ph += .02 * dt; p.x += Math.sin(p.ph) * .5 * dt;
+      cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.283); cx.fill();
+      if (p.y > limit) Object.assign(p, spawn(false));
+    }
+  }
+  raf = requestAnimationFrame(tick);
+}
+window.addEventListener('resize', () => { if (fxMode) size(); });
+
+/* =========================================================
+   MODULE: views (dock buttons) + Day/Week toggle
+   ========================================================= */
+const Tabs = {
+  active: 'weather',
+  show(name) {
+    this.active = name;
+    $('card').dataset.view = name;
+    document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'view-' + name; });
+    document.querySelectorAll('[data-go]').forEach(b => b.setAttribute('aria-pressed', b.dataset.go === name));
+    $('toggle').classList.toggle('away', name !== 'weather');
+    $('views').scrollTop = 0;
+    if (fxMode) size();
+  }
+};
+document.querySelectorAll('[data-go]').forEach(b =>
+  b.addEventListener('click', () => Tabs.show(Tabs.active === b.dataset.go ? 'weather' : b.dataset.go)));
+document.querySelectorAll('#toggle [data-m]').forEach(b =>
+  b.addEventListener('click', () => { setMode(b.dataset.m); Tabs.show('weather'); }));
+
+function setMode(m) {
+  mode = m;
+  $('toggle').classList.toggle('week', m === 'week');
+  document.querySelectorAll('#toggle [data-m]').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  document.querySelectorAll('#tlabels [data-l]').forEach(s => s.classList.toggle('on', s.dataset.l === m));
+  $('fLbl').innerHTML = (m === 'day' ? ICON_CLOCK : ICON_CAL) + ' Forecast';
+  renderForecast();
+}
+
+/* =========================================================
+   MODULE: data source (live fetch + mock fallback)
+   ========================================================= */
+const Config = {
+  // Add ?mock=1 to the link to force demo data.
+  forceMock: new URLSearchParams(location.search).has('mock'),
+  // LIVE FETCH PLACEHOLDER: point this at your own soil sensor or farm API.
+  // It should return JSON such as { "moisture": 0.27 } (volumetric water content, 0 to 1).
+  // Leave as null to use the soil model from Open-Meteo.
+  soilSensorUrl: null,
+  parseSensor: j => (j && typeof j.moisture === 'number' ? j.moisture : null)
+};
+
+const Mock = {
+  fill(hours, force) {
+    let filled = 0, total = 0;
+    const out = hours.map((h, i) => {
+      const hr = parseInt(h.t.slice(0, 2), 10), f = Object.assign({}, h);
+      const set = (k, v) => { total++; if (force || f[k] == null) { f[k] = v; filled++; } };
+      set('uv', h.isDay ? +Math.max(0, 9 * Math.sin(Math.PI * (hr - 6) / 12)).toFixed(1) : 0);
+      set('humidity', Math.round(55 + 25 * Math.cos((hr - 5) * Math.PI / 12)));
+      set('wind', Math.round(8 + 6 * Math.sin((hr - 9) * Math.PI / 12)));
+      set('pop', i >= 5 && i <= 7 ? 80 : 10);          // demo rain event ~5 hours ahead
+      set('precip', i >= 5 && i <= 6 ? 2.4 : 0);
+      set('soilM', 0.27);
+      set('soilT', Math.round(h.temp - 3));
+      set('et', 0.1);
+      return f;
+    });
+    return { hours: out, filled, total };
+  }
+};
+
+async function resolveData(d) {
+  const base = (d.hourly || []).slice(0, 24);
+  if (!base.length) return null;
+  const m = Mock.fill(base, Config.forceMock);
+  let source = m.filled === 0 ? 'live' : m.filled === m.total ? 'mock' : 'mixed';
+  let moisture = m.hours[0].soilM, soilT = m.hours[0].soilT;
+  if (Config.soilSensorUrl) {
+    try {
+      const j = await (await fetch(Config.soilSensorUrl)).json();
+      const v = Config.parseSensor(j);
+      if (v != null) { moisture = v; if (source === 'mock') source = 'mixed'; }
+    } catch (e) { /* sensor offline: keep model value */ }
+  }
+  return { hours: m.hours, source, moisture, soilT, aqi: d.aqi };
+}
+function setBadges(src) {
+  const text = { live: 'Live data', mixed: 'Partly demo data', mock: 'Demo data' }[src];
+  document.querySelectorAll('[data-badge]').forEach(b => { b.textContent = text; b.dataset.src = src; });
+}
+
+/* =========================================================
+   MODULE: shared UI helpers for Garden + Run
+   ========================================================= */
+const toneOf = l => ({ Great: 'good', Ideal: 'good', Fair: 'mid', Okay: 'mid' })[l] || 'bad';
+const list = items => `<ul class="list">${items.map(x => `<li>${x}</li>`).join('')}</ul>`;
+const tile = (label, value, tone, hint) =>
+  `<div class="tile ${tone}"><small>${label}</small><b>${value}</b><em>${hint}</em></div>`;
 function aqiLabel(v) {
   return v <= 50 ? 'Good' : v <= 100 ? 'Moderate' : v <= 150 ? 'Unhealthy for some' : 'Unhealthy';
 }
-function arcPoint(t) {
-  const u = 1 - t;
-  return { x: u*u*20 + 2*u*t*150 + t*t*280, y: u*u*150 + 2*u*t*-30 + t*t*150 };
+function renderStrip(el, rated, sel, onPick) {
+  const x = el.scrollLeft;
+  el.innerHTML = rated.map((r, i) => {
+    const t = r.hour.t, lab = i === 0 ? 'Now' : R.fmtShort(t);
+    return `<button type="button" class="bar ${toneOf(r.label)}" data-i="${i}" aria-pressed="${i === sel}" ` +
+      `aria-label="${R.fmtHour(t)}: ${r.label}, score ${r.score}">` +
+      `<span class="track"><span class="fill" style="height:${Math.max(8, r.score)}%"></span></span>` +
+      `<span class="hr">${lab}</span></button>`;
+  }).join('');
+  el.scrollLeft = x;
+  el.onclick = e => { const b = e.target.closest('.bar'); if (b) onPick(+b.dataset.i); };
 }
-function progress(d) {
-  const now = new Date(d.now), rise = new Date(d.sunrise), set = new Date(d.sunset);
-  const day = 86400000;
-  let p;
-  if (d.isDay) p = (now - rise) / (set - rise);
-  else {
-    const night = day - (set - rise);
-    p = now > set ? (now - set) / night : (now - (set - day)) / night;
+function scrollToSel(el, sel) {
+  const b = el.children[sel];
+  if (b) el.scrollLeft = Math.max(0, b.offsetLeft - 40);
+}
+
+/* =========================================================
+   MODULE: Run & Fitness view
+   ========================================================= */
+const RunView = {
+  sel: 0, rated: [], wins: [], ctx: null,
+  render(ctx) {
+    this.ctx = ctx;
+    this.rated = R.rateRunDay(ctx.hours);
+    this.wins = R.bestRunWindows(this.rated);
+    this.sel = this.wins.length ? this.wins[0].start : 0;
+    this.paintBest(); this.paintAll();
+    scrollToSel($('runStrip'), this.sel);
+  },
+  pick(i) { this.sel = i; this.paintAll(); },
+  paintBest() {
+    const w = this.wins[0];
+    const air = this.ctx.aqi != null ? `<p class="note" style="margin-top:6px">Air quality ${this.ctx.aqi} · ${aqiLabel(this.ctx.aqi)}</p>` : '';
+    if (!w) {
+      $('runBest').innerHTML = `<p class="kicker">Best time to run</p><p class="big">No good window</p>` +
+        `<p class="sub">The next 24 hours look rough. Try an indoor session.</p>${air}`;
+      return;
+    }
+    const a = this.rated[w.start].hour, b = this.rated[w.end].hour;
+    $('runBest').innerHTML = `<p class="kicker">Best time to run</p>` +
+      `<p class="big">${R.fmtRange(a.t, b.t)}</p>` +
+      `<p class="sub"><span class="pill ${toneOf(w.label)}">${w.label}</span> &nbsp;${a.temp}° · humidity ${a.humidity}% · UV ${a.uv}</p>${air}`;
+  },
+  paintAll() {
+    renderStrip($('runStrip'), this.rated, this.sel, i => this.pick(i));
+    const r = this.rated[this.sel], h = r.hour, c = R.CONFIG.run;
+    $('runDetail').innerHTML =
+      `<div class="row"><h3>${this.sel === 0 ? 'Now' : R.fmtHour(h.t)}</h3><span class="pill ${toneOf(r.label)}">${r.label} · ${r.score}</span></div>` +
+      `<div class="tiles">` +
+        tile('Temperature', h.temp + '°', h.temp <= c.tempMax ? 'ok' : 'bad', `Target under ${c.tempMax}°`) +
+        tile('Humidity', h.humidity + '%', h.humidity <= c.humidityMax ? 'ok' : 'bad', `Target under ${c.humidityMax}%`) +
+        tile('Wind', h.wind + ' km/h', h.wind <= c.windMax ? 'ok' : h.wind <= c.windHard ? 'warn' : 'bad', `Calm under ${c.windMax}`) +
+        tile('UV index', h.uv, h.uv <= c.uvMax ? 'ok' : h.uv < c.uvHigh ? 'warn' : 'bad', `Low under ${c.uvMax}`) +
+      `</div>` +
+      (r.reasons.length ? list(r.reasons) : `<p class="note">All four conditions are within your targets.</p>`);
+
+    const g = R.gearAdvice(r, h);
+    $('runGear').innerHTML = `<h3>Gear &amp; safety</h3>` +
+      `<h4>What to wear</h4>${list(g.outfit)}` +
+      `<h4>Hydration</h4><p class="hyd">💧 <b>${g.hydration.ml} ml</b> per hour</p><p class="note">${g.hydration.text}</p>` +
+      `<h4>Safety</h4>${list(g.safety)}`;
   }
-  return Math.min(1, Math.max(0, p));
-}
-function sleepTip(d) {
-  const rainy = [51,53,55,61,63,65,80,81,82,95,96,99].includes(d.code);
+};
+
+/* =========================================================
+   MODULE: Garden view
+   ========================================================= */
+const GardenView = {
+  sel: 0, rated: [], wins: [], ctx: null,
+  render(ctx) {
+    this.ctx = ctx;
+    this.rated = R.ratePlantingDay(ctx.hours);
+    this.wins = R.bestPlantingWindows(this.rated);
+    this.sel = this.wins.length ? this.wins[0].start : 0;
+    this.paintIrrigation(); this.paintBest(); this.paintAll(); this.paintSow();
+    scrollToSel($('plantStrip'), this.sel);
+  },
+  pick(i) { this.sel = i; this.paintAll(); },
+  paintIrrigation() {
+    const a = R.irrigationAdvice(this.ctx.hours, this.ctx.moisture);
+    const el = $('irrAlert');
+    el.dataset.status = a.status;
+    el.innerHTML = `<span class="ico" aria-hidden="true">${{ skip: '🌧️', water: '💦', ok: '🌿' }[a.status]}</span>` +
+      `<div><p class="head2">${a.headline}</p><p class="sub2">${a.detail}</p></div>`;
+
+    const s = a.soil, soilT = this.ctx.soilT;
+    $('soilCard').innerHTML = `<h3>Soil &amp; rain</h3>` +
+      (s ? `<div class="gauge" role="img" aria-label="Soil moisture ${s.pct} percent, ${s.label}">` +
+           `<i style="left:${Math.min(97, s.pct / 50 * 100)}%"></i></div>` +
+           `<div class="gl"><span>Dry</span><span>Moist</span><span>Wet</span></div>`
+         : `<p class="note">Soil moisture is not available for this location.</p>`) +
+      `<div class="tiles t3">` +
+        tile('Moisture', s ? s.pct + '%' : '--', s ? s.tone : 'warn', s ? s.label : 'No data') +
+        tile('Soil temp', soilT != null ? soilT + '°' : '--', 'ok', 'At 6 cm') +
+        tile('Rain 24h', a.totalRain + ' mm', a.totalRain >= 3 ? 'wet' : 'ok', a.rainAt ? 'From ' + R.fmtHour(a.rainAt) : 'None due') +
+      `</div>`;
+  },
+  paintBest() {
+    const w = this.wins[0];
+    if (!w) {
+      $('plantBest').innerHTML = `<p class="kicker">Best planting window</p><p class="big">None today</p>` +
+        `<p class="sub">Heat, strong UV or rain make the next 24 hours poor for planting.</p>`;
+      return;
+    }
+    const a = this.rated[w.start].hour, b = this.rated[w.end].hour;
+    $('plantBest').innerHTML = `<p class="kicker">Best planting window</p>` +
+      `<p class="big">${R.fmtRange(a.t, b.t)}</p>` +
+      `<p class="sub"><span class="pill ${toneOf(w.label)}">${w.label}</span> &nbsp;UV ${a.uv} · ${a.temp}° · wind ${a.wind} km/h</p>`;
+  },
+  paintAll() {
+    renderStrip($('plantStrip'), this.rated, this.sel, i => this.pick(i));
+    const r = this.rated[this.sel], h = r.hour, c = R.CONFIG.plant;
+    $('plantDetail').innerHTML =
+      `<div class="row"><h3>${this.sel === 0 ? 'Now' : R.fmtHour(h.t)}</h3><span class="pill ${toneOf(r.label)}">${r.label} · ${r.score}</span></div>` +
+      `<div class="tiles t3">` +
+        tile('Temp', h.temp + '°', h.temp >= c.tempIdealLow && h.temp <= c.tempIdealHigh ? 'ok' : 'warn', `${c.tempIdealLow}–${c.tempIdealHigh}° ideal`) +
+        tile('UV', h.uv, h.uv <= c.uvMax ? 'ok' : 'bad', `Under ${c.uvMax} ideal`) +
+        tile('Wind', h.wind + ' km/h', h.wind <= c.windMax ? 'ok' : 'warn', `Under ${c.windMax}`) +
+      `</div>` +
+      (r.reasons.length ? list(r.reasons) : `<p class="note">Gentle sun and mild temperatures. Good for transplanting and sowing.</p>`);
+  },
+  paintSow() {
+    const n = R.sowingNote(this.ctx.soilT);
+    $('sowNote').innerHTML = `<h3>What to sow</h3><p style="font-weight:700;margin-bottom:4px">${n.title}</p><p class="note">${n.text}</p>`;
+  }
+};
+
+/* =========================================================
+   MODULE: weather forecast row
+   ========================================================= */
+function sleepTip(d, kind) {
   if (d.aqi != null && d.aqi > 100) return '😷 Air quality is poor tonight. Keep windows closed.';
-  if (rainy) return '🌧️ Rain outside, which makes great sleeping sounds.';
+  if (kind === 'snow') return '❄️ Snowy night. Perfect for a cozy blanket.';
+  if (kind === 'rain' || kind === 'storm') return '🌧️ Rain outside, which makes great sleeping sounds.';
   if (d.temp >= 28) return '🥵 Warm night. Keep the room cool and use a fan.';
   if (d.temp <= 12) return '🧣 Chilly night. A warm blanket will help.';
   if (d.cloud < 20) return '✨ Clear skies, a good night for stargazing before bed.';
   return '😴 Calm and comfortable. Good conditions for sleep.';
 }
+function wd(s) { return new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' }); }
+function item(label, svg, t) {
+  return `<div class="it"><span class="lb">${label}</span><div class="chip">${svg}</div><span class="tp">${t}</span></div>`;
+}
+function renderForecast() {
+  if (!data) return;
+  let html = '';
+  if (mode === 'day') {
+    html = data.hourly.map((h, i) => item(i === 0 ? 'Now' : h.t, icon(kindOf(h.code), h.isDay, curPhase), h.temp + '°')).join('');
+  } else {
+    html = data.daily.map((d, i) => item(i === 0 ? 'Today' : wd(d.d), icon(kindOf(d.code), true, curPhase), d.max + '°')).join('');
+  }
+  $('scroller').innerHTML = html;
+  $('scroller').scrollLeft = 0;
+}
 
-/* ---------- main ---------- */
+/* test any look by adding ?demo=rain, storm, snow, cold, night or day to the link */
+function demo(d) {
+  const m = new URLSearchParams(location.search).get('demo');
+  if (!m) return;
+  if (m === 'rain') d.code = 63;
+  if (m === 'storm') d.code = 95;
+  if (m === 'snow') { d.code = 73; d.temp = -8; }
+  if (m === 'cold') { d.code = 0; d.temp = -12; }
+  if (m === 'night') { d.isDay = false; d.code = 0; d.cloud = 10; }
+  if (m === 'day') { d.isDay = true; d.code = 0; }
+}
+
+/* =========================================================
+   MAIN
+   ========================================================= */
+function setCity(name) { placeName = name; $('cityName').textContent = name; }
+
 async function load(lat, lon, name) {
   try {
     const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
     const d = await res.json();
     if (d.error) throw new Error(d.error);
+    demo(d);
 
-    placeName = name;
+    data = d; setCity(name); curPhase = moonPhase(new Date());
+    const kind = kindOf(d.code);
+    const rainy = kind === 'rain' || kind === 'storm', snowy = kind === 'snow';
+    const dark = !d.isDay || rainy, cold = d.temp <= 2 || snowy;
+
+    $('card').className = 'card ' + (dark ? 'dark' : 'light') + (rainy ? ' rainy' : '') +
+      (snowy ? ' snowy' : '') + (kind === 'storm' ? ' storm' : '') + (cold ? ' cold' : '') +
+      (!d.isDay ? ' isnight' : '') + (!d.isDay && !rainy && !snowy && d.cloud < 85 ? ' starry' : '');
+
     $('msg').textContent = '';
-    $('card').className = 'card ' + (d.isDay ? 'day' : 'night');
-    $('place').textContent = '📍 ' + name;
+    $('stime').textContent = d.now.slice(11, 16);
     $('temp').textContent = d.temp + '°';
-    $('desc').textContent = (codes[d.code] || 'Weather') + ' · ' + d.now.slice(11);
+    $('big').innerHTML = icon(kind, d.isDay, curPhase);
+    $('cap').textContent = (NAMES[d.code] || 'Weather') + (d.isDay ? '' : ' · ' + moonName(curPhase));
+    $('tip').textContent = sleepTip(d, kind);
 
-    const pt = arcPoint(progress(d));
-    $('orb').setAttribute('transform', `translate(${pt.x},${pt.y})`);
+    renderForecast();
+    setFx(rainy ? 'rain' : snowy ? 'snow' : null, kind === 'storm' ? 170 : rainy ? 120 : 70);
 
-    const p = moonPhase(new Date());
-    $('sun').style.display = d.isDay ? '' : 'none';
-    $('moonBase').style.display = d.isDay ? 'none' : '';
-    $('moonLit').style.display = d.isDay ? 'none' : '';
-    $('moonLit').setAttribute('d', moonPath(p, 16));
-    const lit = Math.round((1 - Math.cos(2 * Math.PI * p)) / 2 * 100);
-    $('moon').textContent = `🌙 ${moonName(p)} · ${lit}% lit`;
-
-    $('tip').textContent = sleepTip(d);
-    $('cloud').textContent = d.cloud + '%';
-    if (d.aqi != null) {
-      $('aqi').textContent = d.aqi;
-      $('aqiLabel').textContent = aqiLabel(d.aqi);
-      $('aqiDot').style.left = Math.min(96, d.aqi / 3) + '%';
-    } else {
-      $('aqi').textContent = '--';
-      $('aqiLabel').textContent = 'Not available';
+    try {
+      if (!R) throw new Error('ratings.js did not load');
+      const ctx = await resolveData(d);
+      if (ctx) { RunView.render(ctx); GardenView.render(ctx); setBadges(ctx.source); }
+    } catch (err) {
+      console.error(err);
+      const m = '<p class="note">Could not build this view. Make sure ratings.js is uploaded next to index.js.</p>';
+      $('runBest').innerHTML = m; $('irrAlert').innerHTML = m;
     }
   } catch (e) {
-    if (placeName) $('msg').textContent = 'Could not load weather. Try again.';
-    else $('place').textContent = 'Could not load weather. Try searching a city.';
+    if (data) $('msg').textContent = 'Could not load weather. Try again.';
+    else { setCity('Search a city'); $('msg').textContent = 'Could not load weather.'; }
   }
 }
 
+function openSearch(open) {
+  $('form').hidden = !open;
+  $('city').setAttribute('aria-expanded', open);
+  if (open) $('q').focus();
+}
 async function search(text) {
   try {
     const r = await fetch('/api/search?q=' + encodeURIComponent(text));
     const p = await r.json();
-    if (p.error) {
-      $('msg').textContent = `Couldn't find "${text}". Check the spelling.`;
-      if (!placeName) $('place').textContent = 'Search for a city';
-      return;
-    }
-    load(p.lat, p.lon, p.name + ', ' + p.country);
-  } catch (e) {
-    $('msg').textContent = 'Search failed. Try again.';
-  }
+    if (p.error) { $('msg').textContent = `Couldn't find "${text}". Check the spelling.`; return; }
+    openSearch(false); $('q').value = '';
+    load(p.lat, p.lon, p.name + ', ' + (p.cc || p.country));
+  } catch (e) { $('msg').textContent = 'Search failed. Try again.'; }
+}
+async function locate(lat, lon) {
+  let name = 'Your location';
+  try {
+    const p = await Promise.race([
+      fetch(`/api/reverse?lat=${lat}&lon=${lon}`).then(r => r.json()),
+      new Promise(r => setTimeout(() => r(null), 2500))
+    ]);
+    if (p && p.name) name = p.name + (p.cc ? ', ' + p.cc : '');
+  } catch (e) { /* keep default name */ }
+  load(lat, lon, name);
+}
+function geo() {
+  navigator.geolocation.getCurrentPosition(
+    pos => locate(pos.coords.latitude, pos.coords.longitude),
+    () => { if (!data) search('London'); else $('msg').textContent = 'Location is blocked. Search a city instead.'; }
+  );
 }
 
+$('city').onclick = () => openSearch($('form').hidden);
+$('locBtn').onclick = () => { openSearch(false); geo(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') openSearch(false); });
 $('form').onsubmit = e => {
   e.preventDefault();
   const v = $('q').value.trim();
   if (v) search(v);
 };
 
-navigator.geolocation.getCurrentPosition(
-  pos => load(pos.coords.latitude, pos.coords.longitude, 'Your location'),
-  () => search('London')
-);
+setMode('day');
+geo();
 </script>
 </body>
 </html>
