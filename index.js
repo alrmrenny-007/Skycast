@@ -9,6 +9,7 @@ const app = express();
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
 app.get('/ratings.js', (req, res) => res.sendFile(path.join(__dirname, 'ratings.js')));
+app.get('/extras.js', (req, res) => res.sendFile(path.join(__dirname, 'extras.js')));
 
 /* ---------------------------------------------------------
    Install as an app: manifest, service worker, icons
@@ -24,6 +25,13 @@ app.get('/manifest.json', (req, res) => {
     orientation: 'portrait',
     background_color: '#1d2757',
     theme_color: '#1d2757',
+    shortcuts: [
+      { name: 'Widget view', short_name: 'Widget', url: '/?widget=1' },
+      { name: 'Rain radar', short_name: 'Radar', url: '/?view=map' },
+      { name: 'Run planner', short_name: 'Run', url: '/?view=run' },
+      { name: 'Garden planner', short_name: 'Garden', url: '/?view=garden' },
+      { name: 'Sleep forecast', short_name: 'Sleep', url: '/?view=sleep' }
+    ],
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
@@ -32,8 +40,8 @@ app.get('/manifest.json', (req, res) => {
 });
 
 const SW = `
-const CACHE = 'skycast-v3';
-const SHELL = ['/', '/app.js', '/ratings.js', '/manifest.json', '/icon-192.png'];
+const CACHE = 'skycast-v4';
+const SHELL = ['/', '/app.js', '/ratings.js', '/extras.js', '/manifest.json', '/icon-192.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -147,6 +155,37 @@ app.get('/api/reverse', async (req, res) => {
     const name = d.city || d.locality || d.principalSubdivision || null;
     res.json({ name, cc: d.countryCode || null });
   } catch (e) { res.json({ name: null, cc: null }); }
+});
+
+// Monthly climate averages for the crop calendar (3 past years from the Open-Meteo archive).
+function buildClimate(daily, years) {
+  const sum = Array(12).fill(0), cnt = Array(12).fill(0), frost = Array(12).fill(0), rain = Array(12).fill(0);
+  daily.time.forEach((d, i) => {
+    const m = parseInt(d.slice(5, 7), 10) - 1;
+    const t = daily.temperature_2m_mean[i], mn = daily.temperature_2m_min[i], p = daily.precipitation_sum[i];
+    if (t != null) { sum[m] += t; cnt[m]++; }
+    if (mn != null && mn <= 1) frost[m]++;
+    if (p != null) rain[m] += p;
+  });
+  return {
+    meanT: sum.map((s, m) => (cnt[m] ? Math.round(s / cnt[m] * 10) / 10 : null)),
+    frostDays: frost.map(f => Math.round(f / years * 10) / 10),
+    rain: rain.map(r => Math.round(r / years)),
+    years
+  };
+}
+app.get('/api/climate', async (req, res) => {
+  const { lat, lon } = req.query;
+  if (!lat || !lon) return res.status(400).json({ error: 'lat and lon needed' });
+  try {
+    const y = new Date().getFullYear();
+    const u = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+      `&start_date=${y - 3}-01-01&end_date=${y - 1}-12-31` +
+      `&daily=temperature_2m_mean,temperature_2m_min,precipitation_sum&timezone=auto`;
+    const j = await fetch(u).then(r => r.json());
+    if (!j.daily || !j.daily.time) throw new Error('no data');
+    res.set('Cache-Control', 'public, s-maxage=86400, max-age=86400').json(buildClimate(j.daily, 3));
+  } catch (e) { res.status(500).json({ error: 'Climate failed' }); }
 });
 
 const rd = (v, p) => (v == null ? null : Math.round(v * 10 ** p) / 10 ** p);

@@ -1,7 +1,8 @@
 /* ratings.js
    Pure condition-rating logic for Skycast. No DOM, no network.
    Browser: window.Ratings      Node: require('./ratings.js')
-   Every threshold lives in CONFIG or CROPS so it is easy to tune. */
+   Every threshold lives in CONFIG or CROPS so it is easy to tune.
+   All user-facing sentences go through T() so they can be translated (see i18n.js). */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.Ratings = factory();
@@ -36,6 +37,15 @@
   const r0 = v => Math.round(v);
   const pad = n => String(n).padStart(2, '0');
   const hr = h => parseInt(String(h.t).slice(0, 2), 10);
+
+  /* Translation hook: setTranslator(key => translatedTemplate). Templates use {name} placeholders. */
+  let TR = null;
+  function T(key, vars) {
+    let s = TR ? TR(key) : key;
+    if (vars) s = s.replace(/\{(\w+)\}/g, (m, n) => (n in vars ? vars[n] : m));
+    return s;
+  }
+  function setTranslator(fn) { TR = fn; }
 
   /* Output formatting can be swapped (e.g. °F, mph) without touching any rating maths. */
   let FMT = { temp: v => Math.round(v) + '°', wind: v => Math.round(v) + ' km/h' };
@@ -89,21 +99,21 @@
     const uv = num(h.uv, 0), pop = num(h.pop, 0), rain = num(h.precip, 0);
     let score = 100; const reasons = [], breaches = [];
 
-    if (t > cfg.tempMax) { score -= Math.min(50, (t - cfg.tempMax) * 6 + 10); breaches.push('temp'); reasons.push(`Hot (${FMT.temp(t)})`); }
+    if (t > cfg.tempMax) { score -= Math.min(50, (t - cfg.tempMax) * 6 + 10); breaches.push('temp'); reasons.push(T('Hot ({v})', { v: FMT.temp(t) })); }
     else if (t > 18) score -= (t - 18) * 1.5;
-    else if (t < 5) { score -= Math.min(35, (5 - t) * 3); reasons.push(`Cold (${FMT.temp(t)})`); }
+    else if (t < 5) { score -= Math.min(35, (5 - t) * 3); reasons.push(T('Cold ({v})', { v: FMT.temp(t) })); }
 
-    if (hum > cfg.humidityMax) { score -= Math.min(30, (hum - cfg.humidityMax) * 1.2 + 5); breaches.push('humidity'); reasons.push(`Humid (${r0(hum)}%)`); }
+    if (hum > cfg.humidityMax) { score -= Math.min(30, (hum - cfg.humidityMax) * 1.2 + 5); breaches.push('humidity'); reasons.push(T('Humid ({v})', { v: r0(hum) + '%' })); }
 
-    if (w > cfg.windHard) { score -= Math.min(40, 18 + (w - cfg.windHard) * 2); breaches.push('wind'); reasons.push(`Very windy (${FMT.wind(w)})`); }
-    else if (w > cfg.windMax) { score -= (w - cfg.windMax) * 1.2; reasons.push(`Breezy (${FMT.wind(w)})`); }
+    if (w > cfg.windHard) { score -= Math.min(40, 18 + (w - cfg.windHard) * 2); breaches.push('wind'); reasons.push(T('Very windy ({v})', { v: FMT.wind(w) })); }
+    else if (w > cfg.windMax) { score -= (w - cfg.windMax) * 1.2; reasons.push(T('Breezy ({v})', { v: FMT.wind(w) })); }
 
-    if (uv >= cfg.uvHigh) { score -= Math.min(30, (uv - cfg.uvMax) * 6); breaches.push('uv'); reasons.push(`Very high UV (${r0(uv)})`); }
-    else if (uv > cfg.uvMax) { score -= (uv - cfg.uvMax) * 5; reasons.push(`High UV (${r0(uv)})`); }
+    if (uv >= cfg.uvHigh) { score -= Math.min(30, (uv - cfg.uvMax) * 6); breaches.push('uv'); reasons.push(T('Very high UV ({v})', { v: r0(uv) })); }
+    else if (uv > cfg.uvMax) { score -= (uv - cfg.uvMax) * 5; reasons.push(T('High UV ({v})', { v: r0(uv) })); }
 
     if (rain >= 0.5 || pop >= 60) {
       score -= Math.min(25, Math.max(rain * 8, (pop - 40) * 0.5));
-      reasons.push('Rain likely');
+      reasons.push(T('Rain likely'));
     }
 
     score = clamp(r0(score), 0, 100);
@@ -115,7 +125,7 @@
     if (h.isDay === false) {
       const late = hr(h) >= 22 || hr(h) < 5;
       score = clamp(Math.min(score - 10, late ? cfg.fair - 1 : cfg.great - 1), 0, 100);
-      reasons.push(late ? 'Late night: poor visibility and safety' : 'Dark: wear reflective gear');
+      reasons.push(late ? T('Late night: poor visibility and safety') : T('Dark: wear reflective gear'));
     }
 
     const label = score >= cfg.great ? 'Great' : score >= cfg.fair ? 'Fair' : 'Poor';
@@ -134,38 +144,36 @@
   function outfit(h) {
     const t = num(h.temp, 15), w = num(h.wind, 0), uv = num(h.uv, 0), pop = num(h.pop, 0), rain = num(h.precip, 0);
     const items = [];
-    if (t < 3) items.push('Thermal base layer, tights, gloves and a beanie');
-    else if (t < 10) items.push('Long sleeves, leggings and light gloves');
-    else if (t < 17) items.push('Light long-sleeve or tee with shorts');
-    else if (t < 24) items.push('Breathable tee and shorts');
-    else items.push('Moisture-wicking singlet and light shorts');
-    if (t >= 22) items.push('Light colours to reflect heat');
-    if (w > 20 && t < 20) items.push('Windbreaker for exposed stretches');
-    if (rain >= 0.5 || pop >= 50) items.push('Water-resistant shell and shoes with good grip');
-    if (uv >= 3 && h.isDay !== false) items.push('Cap, sunglasses and SPF 30+');
-    if (h.isDay === false) items.push('Reflective vest and a headlamp');
+    if (t < 3) items.push(T('Thermal base layer, tights, gloves and a beanie'));
+    else if (t < 10) items.push(T('Long sleeves, leggings and light gloves'));
+    else if (t < 17) items.push(T('Light long-sleeve or tee with shorts'));
+    else if (t < 24) items.push(T('Breathable tee and shorts'));
+    else items.push(T('Moisture-wicking singlet and light shorts'));
+    if (t >= 22) items.push(T('Light colours to reflect heat'));
+    if (w > 20 && t < 20) items.push(T('Windbreaker for exposed stretches'));
+    if (rain >= 0.5 || pop >= 50) items.push(T('Water-resistant shell and shoes with good grip'));
+    if (uv >= 3 && h.isDay !== false) items.push(T('Cap, sunglasses and SPF 30+'));
+    if (h.isDay === false) items.push(T('Reflective vest and a headlamp'));
     return items;
   }
   function safetyTips(rating, h) {
     const tips = [], t = num(h.temp, 15);
-    if (rating.label === 'Great') tips.push('Prime conditions. Good day for a longer or faster session.');
-    else if (rating.label === 'Fair') tips.push('Manageable. Ease the pace and listen to your body.');
-    else tips.push('Tough conditions. Shorten the run, go indoors, or pick a better window.');
-    if (rating.breaches.includes('temp')) tips.push('Heat risk: slow down, use shade, stop if dizzy or nauseous.');
-    if (rating.breaches.includes('humidity')) tips.push('Sweat cools you less in humid air, so effort will feel harder.');
-    if (rating.breaches.includes('wind')) tips.push('Run into the wind first so it helps you on the way back.');
-    if (rating.breaches.includes('uv')) tips.push('Strong UV: pick shade or run earlier or later.');
-    if (t < 3) tips.push('Watch for ice on paths and warm up indoors first.');
+    if (rating.label === 'Great') tips.push(T('Prime conditions. Good day for a longer or faster session.'));
+    else if (rating.label === 'Fair') tips.push(T('Manageable. Ease the pace and listen to your body.'));
+    else tips.push(T('Tough conditions. Shorten the run, go indoors, or pick a better window.'));
+    if (rating.breaches.includes('temp')) tips.push(T('Heat risk: slow down, use shade, stop if dizzy or nauseous.'));
+    if (rating.breaches.includes('humidity')) tips.push(T('Sweat cools you less in humid air, so effort will feel harder.'));
+    if (rating.breaches.includes('wind')) tips.push(T('Run into the wind first so it helps you on the way back.'));
+    if (rating.breaches.includes('uv')) tips.push(T('Strong UV: pick shade or run earlier or later.'));
+    if (t < 3) tips.push(T('Watch for ice on paths and warm up indoors first.'));
     return tips;
   }
   function gearAdvice(rating, h) {
     const ml = hydrationMl(h), t = num(h.temp, 15);
     return {
       outfit: outfit(h),
-      hydration: {
-        ml,
-        text: `Drink 300–500 ml before you start, then sip every 15–20 minutes${t >= 25 ? ' and add electrolytes' : ''}.`
-      },
+      hydration: { ml, text: t >= 25 ? T('Drink 300–500 ml before you start, then sip every 15–20 minutes and add electrolytes.')
+                                     : T('Drink 300–500 ml before you start, then sip every 15–20 minutes.') },
       safety: safetyTips(rating, h)
     };
   }
@@ -183,15 +191,15 @@
 
   function ratePlantingHour(h, userCfg) {
     const cfg = Object.assign({}, CONFIG.plant, userCfg || {});
-    if (h.isDay === false) return { score: 0, label: 'Avoid', reasons: ['Too dark to work'] };
+    if (h.isDay === false) return { score: 0, label: 'Avoid', reasons: [T('Too dark to work')] };
     const t = num(h.temp, 20), uv = num(h.uv, 0), w = num(h.wind, 5), pop = num(h.pop, 0), rain = num(h.precip, 0);
     let score = 100; const reasons = [];
 
-    if (uv > cfg.uvMax) { score -= Math.min(45, (uv - cfg.uvMax) * 10); reasons.push(`Strong sun (UV ${r0(uv)}) stresses seedlings`); }
-    if (t > cfg.tempIdealHigh) { score -= Math.min(45, (t - cfg.tempIdealHigh) * 6 + 5); reasons.push(`Hot (${FMT.temp(t)})`); }
-    else if (t < cfg.tempIdealLow) { score -= Math.min(40, (cfg.tempIdealLow - t) * 4); reasons.push(`Cool (${FMT.temp(t)})`); }
-    if (w > cfg.windMax) { score -= Math.min(25, (w - cfg.windMax) * 1.5); reasons.push(`Windy (${FMT.wind(w)}) dries the soil`); }
-    if (rain >= 2 || pop >= 70) { score -= 25; reasons.push('Heavy rain: soil too wet to work'); }
+    if (uv > cfg.uvMax) { score -= Math.min(45, (uv - cfg.uvMax) * 10); reasons.push(T('Strong sun (UV {v}) stresses seedlings', { v: r0(uv) })); }
+    if (t > cfg.tempIdealHigh) { score -= Math.min(45, (t - cfg.tempIdealHigh) * 6 + 5); reasons.push(T('Hot ({v})', { v: FMT.temp(t) })); }
+    else if (t < cfg.tempIdealLow) { score -= Math.min(40, (cfg.tempIdealLow - t) * 4); reasons.push(T('Cool ({v})', { v: FMT.temp(t) })); }
+    if (w > cfg.windMax) { score -= Math.min(25, (w - cfg.windMax) * 1.5); reasons.push(T('Windy ({v}) dries the soil', { v: FMT.wind(w) })); }
+    if (rain >= 2 || pop >= 70) { score -= 25; reasons.push(T('Heavy rain: soil too wet to work')); }
 
     score = clamp(r0(score), 0, 100);
     const label = score >= cfg.ideal ? 'Ideal' : score >= cfg.okay ? 'Okay' : 'Avoid';
@@ -202,28 +210,29 @@
 
   function sowingNote(soilT, crop) {
     crop = crop || CROPS.general;
-    const lo = crop.soilTemp[0], hi = crop.soilTemp[1];
-    if (soilT == null) return { title: 'Soil temperature unknown', text: 'Check with a soil thermometer before sowing.' };
+    const lo = crop.soilTemp[0], hi = crop.soilTemp[1], cn = T(crop.name);
+    if (soilT == null) return { title: T('Soil temperature unknown'), text: T('Check with a soil thermometer before sowing.') };
+    const v = FMT.temp(soilT);
     if (crop === CROPS.general) {
-      if (soilT < 10) return { title: `Cold soil (${FMT.temp(soilT)})`, text: 'Too cold for most seeds. Wait, or start seedlings indoors.' };
-      if (soilT < 18) return { title: `Cool soil (${FMT.temp(soilT)})`, text: 'Good for peas, spinach, lettuce, radish and other cool-season crops.' };
-      if (soilT <= 30) return { title: `Warm soil (${FMT.temp(soilT)})`, text: 'Good for tomato, beans, maize, okra and other warm-season crops.' };
-      return { title: `Hot soil (${FMT.temp(soilT)})`, text: 'Shade seedlings, mulch, and water deeply after planting.' };
+      if (soilT < 10) return { title: T('Cold soil ({v})', { v }), text: T('Too cold for most seeds. Wait, or start seedlings indoors.') };
+      if (soilT < 18) return { title: T('Cool soil ({v})', { v }), text: T('Good for peas, spinach, lettuce, radish and other cool-season crops.') };
+      if (soilT <= 30) return { title: T('Warm soil ({v})', { v }), text: T('Good for tomato, beans, maize, okra and other warm-season crops.') };
+      return { title: T('Hot soil ({v})', { v }), text: T('Shade seedlings, mulch, and water deeply after planting.') };
     }
-    if (soilT < lo) return { title: `Soil is cold for ${crop.name} (${FMT.temp(soilT)})`, text: `${crop.name} germinates best above ${FMT.temp(lo)}. Wait, or start seedlings indoors.` };
-    if (soilT > hi) return { title: `Soil is hot for ${crop.name} (${FMT.temp(soilT)})`, text: `Above ${FMT.temp(hi)} seeds struggle. Sow in the cool of the day, mulch and water deeply.` };
-    return { title: `Good sowing soil for ${crop.name} (${FMT.temp(soilT)})`, text: `Ideal soil range is ${FMT.temp(lo)} to ${FMT.temp(hi)}.` };
+    if (soilT < lo) return { title: T('Soil is cold for {crop} ({v})', { crop: cn, v }), text: T('{crop} germinates best above {lo}. Wait, or start seedlings indoors.', { crop: cn, lo: FMT.temp(lo) }) };
+    if (soilT > hi) return { title: T('Soil is hot for {crop} ({v})', { crop: cn, v }), text: T('Above {hi} seeds struggle. Sow in the cool of the day, mulch and water deeply.', { hi: FMT.temp(hi) }) };
+    return { title: T('Good sowing soil for {crop} ({v})', { crop: cn, v }), text: T('Ideal soil range is {lo} to {hi}.', { lo: FMT.temp(lo), hi: FMT.temp(hi) }) };
   }
 
   function soilStatus(m) {
     const pct = r0(m * 100);
     const label = m < 0.12 ? 'Very dry' : m < 0.20 ? 'Dry' : m < 0.35 ? 'Moist' : 'Wet';
     const tone = m < 0.20 ? 'warn' : m < 0.35 ? 'ok' : 'wet';
-    return { pct, label, tone };
+    return { pct, label: T(label), tone };
   }
 
   const sameDay = (a, b) => a.time && b.time && a.time.slice(0, 10) === b.time.slice(0, 10);
-  const whenText = (h, first) => (sameDay(h, first) ? `at ${fmtHour(h.t)}` : `tomorrow at ${fmtHour(h.t)}`);
+  const whenText = (h, first) => (sameDay(h, first) ? T('at {t}', { t: fmtHour(h.t) }) : T('tomorrow at {t}', { t: fmtHour(h.t) }));
 
   function bestWateringHour(look) {
     const ok = look.filter(h => {
@@ -245,25 +254,25 @@
     let status, headline;
 
     if (hasSoil && moisture >= cfg.soilWet) {
-      status = 'skip'; headline = 'Skip watering today. The soil is already wet.';
+      status = 'skip'; headline = T('Skip watering today. The soil is already wet.');
     } else if (rain && idx <= 14 && (totalRain >= cfg.rainTotalMm || num(rain.pop, 0) >= 70)) {
       status = 'skip';
-      headline = idx === 0 ? 'Skip watering, rain is expected right now.'
-                           : `Skip watering today, rain expected ${whenText(rain, look[0])}.`;
+      headline = idx === 0 ? T('Skip watering, rain is expected right now.')
+                           : T('Skip watering today, rain expected {when}.', { when: whenText(rain, look[0]) });
     } else if (hasSoil && moisture < cfg.soilDry) {
       status = 'water';
       const best = bestWateringHour(look);
-      headline = best ? `Water ${whenText(best, look[0])}. The soil is dry and no heavy rain is due.`
-                      : 'Water soon. The soil is dry and no heavy rain is due.';
+      headline = best ? T('Water {when}. The soil is dry and no heavy rain is due.', { when: whenText(best, look[0]) })
+                      : T('Water soon. The soil is dry and no heavy rain is due.');
     } else if (!hasSoil && !rain) {
-      status = 'ok'; headline = 'No rain expected. Check the top 2 cm of soil and water if it is dry.';
+      status = 'ok'; headline = T('No rain expected. Check the top 2 cm of soil and water if it is dry.');
     } else {
       status = 'ok';
-      headline = hasSoil ? 'Soil moisture is fine. No watering needed today.'
-                         : 'Light rain possible. Hold off and check the soil later.';
+      headline = hasSoil ? T('Soil moisture is fine. No watering needed today.')
+                         : T('Light rain possible. Hold off and check the soil later.');
     }
 
-    const detail = `Rain next 24h: ${totalRain} mm` + (soil ? ` · Soil moisture ${soil.pct}% (${soil.label})` : '');
+    const detail = T('Rain next 24h: {mm} mm', { mm: totalRain }) + (soil ? ' · ' + T('Soil moisture {pct}% ({label})', { pct: soil.pct, label: soil.label }) : '');
     return { status, headline, detail, totalRain, rainAt: rain ? rain.t : null, soil, moisture: hasSoil ? moisture : null };
   }
 
@@ -271,30 +280,58 @@
   function plantAlerts(daily, crop) {
     crop = crop || CROPS.general;
     const out = [], days = (daily || []).slice(0, 3);
-    const who = crop === CROPS.general ? 'most plants' : crop.name;
-    const when = (i, night) => (i === 0 ? (night ? 'tonight' : 'today') : i === 1 ? 'tomorrow' : 'in 2 days');
+    const who = crop === CROPS.general ? T('most plants') : T(crop.name);
+    const hardy = crop === CROPS.general ? T('Hardy plants') : T(crop.name);
+    const when = (i, night) => (i === 0 ? (night ? T('tonight') : T('today')) : i === 1 ? T('tomorrow') : T('in 2 days'));
     days.forEach((d, i) => {
       if (typeof d.min === 'number') {
+        const w = when(i, true), v = FMT.temp(d.min);
         if (d.min <= crop.frostMin) {
-          out.push({ level: 'bad', icon: '🥶', short: `${d.min <= 0 ? 'Frost' : 'Cold'} ${when(i, true)} (${FMT.temp(d.min)})`,
-            text: `${d.min <= 0 ? 'Frost danger' : 'Cold risk'} ${when(i, true)}: ${FMT.temp(d.min)} is too cold for ${who} (limit ${FMT.temp(crop.frostMin)}). Cover or bring plants in.` });
+          out.push(d.min <= 0
+            ? { level: 'bad', icon: '🥶', short: T('Frost {when} ({v})', { when: w, v }),
+                text: T('Frost danger {when}: {v} is too cold for {who} (limit {lim}). Cover or bring plants in.', { when: w, v, who, lim: FMT.temp(crop.frostMin) }) }
+            : { level: 'bad', icon: '🥶', short: T('Cold {when} ({v})', { when: w, v }),
+                text: T('Cold risk {when}: {v} is too cold for {who} (limit {lim}). Cover or bring plants in.', { when: w, v, who, lim: FMT.temp(crop.frostMin) }) });
         } else if (d.min <= 0) {
-          out.push({ level: 'info', icon: '❄️', short: `Light frost ${when(i, true)}`,
-            text: `Light frost ${when(i, true)} (${FMT.temp(d.min)}). ${who === 'most plants' ? 'Hardy plants' : crop.name} can handle it.` });
+          out.push({ level: 'info', icon: '❄️', short: T('Light frost {when}', { when: w }),
+            text: T('Light frost {when} ({v}). {who} can handle it.', { when: w, v, who: hardy }) });
         }
       }
       if (typeof d.max === 'number') {
+        const w = when(i, false), v = FMT.temp(d.max);
         if (d.max >= crop.heatMax) {
-          out.push({ level: 'bad', icon: '🔥', short: `Heat ${when(i, false)} (${FMT.temp(d.max)})`,
-            text: `Heat stress ${when(i, false)}: up to ${FMT.temp(d.max)}. Water in the early morning and shade seedlings.` });
+          out.push({ level: 'bad', icon: '🔥', short: T('Heat {when} ({v})', { when: w, v }),
+            text: T('Heat stress {when}: up to {v}. Water in the early morning and shade seedlings.', { when: w, v }) });
         } else if (d.max >= crop.heatMax - 3) {
-          out.push({ level: 'warn', icon: '☀️', short: `Hot ${when(i, false)} (${FMT.temp(d.max)})`,
-            text: `Getting hot ${when(i, false)}: up to ${FMT.temp(d.max)}. Mulch and check soil moisture.` });
+          out.push({ level: 'warn', icon: '☀️', short: T('Hot {when} ({v})', { when: w, v }),
+            text: T('Getting hot {when}: up to {v}. Mulch and check soil moisture.', { when: w, v }) });
         }
       }
     });
     const rank = { bad: 0, warn: 1, info: 2 };
     return out.sort((a, b) => rank[a.level] - rank[b.level]);
+  }
+
+  /* ================= CROP CALENDAR =================
+     clim: { meanT:[12], frostDays:[12], rain:[12] }  (monthly averages for the location) */
+  function cropMonthScore(clim, m, crop) {
+    const t = clim.meanT[m], fd = clim.frostDays[m], rain = clim.rain[m];
+    const lo = crop.tempIdeal[0], hi = crop.tempIdeal[1];
+    let s = 100;
+    if (t < lo) s -= Math.min(100, (lo - t) * 12); else if (t > hi) s -= Math.min(100, (t - hi) * 12);
+    if (fd > 0) {
+      if (crop.frostMin >= 0) s -= Math.min(70, 30 + fd * 5);
+      else if (crop.frostMin > -3) s -= Math.min(40, fd * 3);
+    }
+    if (rain < 30) s -= 15; else if (rain > 300) s -= 10;
+    s = clamp(r0(s), 0, 100);
+    return { score: s, label: s >= 75 ? 'Best' : s >= 50 ? 'Okay' : 'Avoid' };
+  }
+  const cropCalendar = (clim, crop) => clim.meanT.map((_, m) => cropMonthScore(clim, m, crop || CROPS.general));
+  function cropsForMonth(clim, m) {
+    return Object.keys(CROPS).filter(k => k !== 'general')
+      .map(k => Object.assign({ key: k }, cropMonthScore(clim, m, CROPS[k])))
+      .filter(x => x.score >= 75).sort((a, b) => b.score - a.score).slice(0, 6);
   }
 
   /* ================= SLEEP ================= */
@@ -341,36 +378,36 @@
     let tp = 0;
     if (tAvg > 22) tp = Math.min(35, (tAvg - 22) * 5); else if (tAvg > 20) tp = (tAvg - 20) * 2; else if (tAvg < 10) tp = Math.min(20, (10 - tAvg) * 2.5);
     score -= tp;
-    factors.push({ name: 'Temperature', value: FMT.temp(tAvg), tone: tp <= 3 ? 'ok' : tp <= 15 ? 'warn' : 'bad', hint: `Ideal ${FMT.temp(15)}–${FMT.temp(20)}` });
-    if (tAvg > 22) tips.push('Warm night: open windows early, use a fan and a light sheet.');
-    if (tAvg < 10) tips.push('Cold night: add a blanket and warm the room before bed.');
+    factors.push({ name: T('Temperature'), value: FMT.temp(tAvg), tone: tp <= 3 ? 'ok' : tp <= 15 ? 'warn' : 'bad', hint: T('Ideal {lo}–{hi}', { lo: FMT.temp(15), hi: FMT.temp(20) }) });
+    if (tAvg > 22) tips.push(T('Warm night: open windows early, use a fan and a light sheet.'));
+    if (tAvg < 10) tips.push(T('Cold night: add a blanket and warm the room before bed.'));
 
     let hp = 0;
     if (hAvg > 70) hp = Math.min(20, (hAvg - 70) * 0.8); else if (hAvg < 30) hp = Math.min(10, (30 - hAvg) * 0.5);
     score -= hp;
-    factors.push({ name: 'Humidity', value: r0(hAvg) + '%', tone: hp <= 2 ? 'ok' : hp <= 10 ? 'warn' : 'bad', hint: 'Ideal 30–70%' });
-    if (hAvg > 70) tips.push('Humid air: a fan or dehumidifier helps you sleep deeper.');
+    factors.push({ name: T('Humidity'), value: r0(hAvg) + '%', tone: hp <= 2 ? 'ok' : hp <= 10 ? 'warn' : 'bad', hint: T('Ideal 30–70%') });
+    if (hAvg > 70) tips.push(T('Humid air: a fan or dehumidifier helps you sleep deeper.'));
 
     let np = 0, noise, ntone = 'ok';
-    if (storm) { np = 25; noise = 'Stormy'; ntone = 'bad'; tips.push('Thunderstorm tonight: earplugs or white noise can help.'); }
-    else if (heavy) { np = 10; noise = 'Loud rain'; ntone = 'warn'; }
-    else if (wMax > 30) { np = 15; noise = 'Very windy'; ntone = 'bad'; tips.push('Strong wind: close windows and shutters to cut the noise.'); }
-    else if (wMax > 20) { np = 8; noise = 'Breezy'; ntone = 'warn'; }
-    else if (soft) { noise = 'Soft rain'; tips.push('Soft rain is great for sleep. Try the rain sound.'); }
-    else noise = 'Calm';
+    if (storm) { np = 25; noise = T('Stormy'); ntone = 'bad'; tips.push(T('Thunderstorm tonight: earplugs or white noise can help.')); }
+    else if (heavy) { np = 10; noise = T('Loud rain'); ntone = 'warn'; }
+    else if (wMax > 30) { np = 15; noise = T('Very windy'); ntone = 'bad'; tips.push(T('Strong wind: close windows and shutters to cut the noise.')); }
+    else if (wMax > 20) { np = 8; noise = T('Breezy'); ntone = 'warn'; }
+    else if (soft) { noise = T('Soft rain'); tips.push(T('Soft rain is great for sleep. Try the rain sound.')); }
+    else noise = T('Calm');
     score -= np;
-    factors.push({ name: 'Noise', value: noise, tone: ntone, hint: `Wind up to ${FMT.wind(wMax)}` });
+    factors.push({ name: T('Noise'), value: noise, tone: ntone, hint: T('Wind up to {v}', { v: FMT.wind(wMax) }) });
 
     if (typeof opts.aqi === 'number') {
       const ap = opts.aqi > 150 ? 20 : opts.aqi > 100 ? 12 : opts.aqi > 50 ? 4 : 0;
       score -= ap;
-      factors.push({ name: 'Air quality', value: String(opts.aqi), tone: ap === 0 ? 'ok' : ap <= 4 ? 'warn' : 'bad', hint: opts.aqi <= 50 ? 'Good' : opts.aqi <= 100 ? 'Moderate' : 'Unhealthy' });
-      if (opts.aqi > 100) tips.push('Poor air: keep windows closed and run a purifier if you have one.');
+      factors.push({ name: T('Air quality'), value: String(opts.aqi), tone: ap === 0 ? 'ok' : ap <= 4 ? 'warn' : 'bad', hint: opts.aqi <= 50 ? T('Good') : opts.aqi <= 100 ? T('Moderate') : T('Unhealthy') });
+      if (opts.aqi > 100) tips.push(T('Poor air: keep windows closed and run a purifier if you have one.'));
     }
     if (clear && typeof opts.moonLit === 'number' && opts.moonLit >= 85) {
-      score -= 3; tips.push('Bright moon and clear sky: use blackout curtains.');
+      score -= 3; tips.push(T('Bright moon and clear sky: use blackout curtains.'));
     }
-    tips.push('Put screens away 30 minutes before bed for easier sleep.');
+    tips.push(T('Put screens away 30 minutes before bed for easier sleep.'));
 
     score = clamp(r0(score), 0, 100);
     const label = score >= 80 ? 'Great' : score >= 60 ? 'Good' : score >= 40 ? 'Restless' : 'Rough';
@@ -395,10 +432,11 @@
   }
 
   return {
-    CONFIG, CROPS, setFormat, fmtHour, fmtShort, fmtTime, fmtRange, findWindows,
+    CONFIG, CROPS, T, setTranslator, setFormat, fmtHour, fmtShort, fmtTime, fmtRange, findWindows,
     rateRunHour, rateRunDay, bestRunWindows, hydrationMl, gearAdvice,
     cropConfig, ratePlantingHour, ratePlantingDay, bestPlantingWindows, sowingNote,
     soilStatus, irrigationAdvice, plantAlerts,
+    cropMonthScore, cropCalendar, cropsForMonth,
     nightWindow, sleepComfortHour, bestBedtime, sleepScore, sunInfo
   };
 });

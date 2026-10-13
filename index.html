@@ -272,6 +272,32 @@
   .light .seg2 button[aria-pressed="true"] { background: #fff; }
   .primary { border: 0; border-radius: 16px; padding: 10px 16px; background: var(--good); color: #08121f; font-weight: 700; cursor: pointer; }
 
+  /* crop calendar */
+  .cal { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin: 4px 0 10px; }
+  .cm { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: var(--ink2); }
+  .cm i { display: block; width: 100%; height: 34px; border-radius: 8px; }
+  .cm.good i { background: var(--good); } .cm.mid i { background: var(--mid); } .cm.bad i { background: var(--bad); opacity: .55; }
+  .cm.now { color: var(--ink); font-weight: 700; } .cm.now i { box-shadow: 0 0 0 2px var(--ink); }
+  .suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* rain radar */
+  .mapBox { position: absolute; inset: 0; background: var(--dock); display: flex; flex-direction: column; gap: 8px;
+            padding: calc(env(safe-area-inset-top) + 14px) 14px calc(14px + env(safe-area-inset-bottom)); }
+  .mapEl { flex: 1; min-height: 200px; border-radius: 20px; overflow: hidden; background: var(--well); }
+  .mapCtl { display: flex; align-items: center; gap: 10px; }
+  .mapCtl input { flex: 1; accent-color: #5aa9ff; }
+  .legendbar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #8fd3ff, #3d8bff, #2b3fd6, #7a2bd6, #d62bb0); }
+  .lgl { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink2); margin-top: -4px; }
+  .credit { font-size: 11px; color: var(--ink2); } .credit a { color: inherit; }
+
+  /* widget view (?widget=1) */
+  .wmode .dock, .wmode .panel, .wmode .chips, .wmode .sun, .wmode .tip, .wmode .sbtn, .wmode #searchBox,
+  .wmode .city span[aria-hidden] { display: none !important; }
+  .wmode .city { pointer-events: none; }
+  .wmode #big .ic { width: 260px; height: 260px; }
+  .wmode .temp { font-size: 76px; }
+  .wmode .hero::after { content: "Tap to open Skycast"; font-size: 12px; color: var(--ink2); margin-top: 18px; }
+
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
@@ -306,6 +332,8 @@
     <time id="stime">--:--</time>
     <div class="sright">
       <span class="badge" data-badge></span>
+      <button class="sbtn" id="mapBtn" aria-label="Rain radar map">🗺</button>
+      <button class="sbtn" id="shareBtn" aria-label="Share today's weather as a picture">📤</button>
       <button class="sbtn" id="soundBtn" aria-pressed="false" aria-label="Ambient weather sound">🔈</button>
     </div>
   </header>
@@ -360,6 +388,7 @@
       </article>
       <article class="glass" id="plantDetail"></article>
       <article class="glass" id="sowNote"></article>
+      <article class="glass" id="calCard"></article>
     </section>
 
     <!-- RUN -->
@@ -415,6 +444,24 @@
     </div>
   </footer>
 
+  <!-- RAIN RADAR -->
+  <div class="sheet" id="mapSheet" role="dialog" aria-modal="true" aria-labelledby="mapTitle" hidden>
+    <div class="mapBox">
+      <div class="row"><h2 id="mapTitle">Rain radar</h2><button class="x" id="mapClose" aria-label="Close radar">✕</button></div>
+      <div id="mapEl" class="mapEl"></div>
+      <div class="mapCtl">
+        <button class="step" id="mapPrev" aria-label="Earlier frame">◀</button>
+        <input type="range" id="mapSlider" min="0" max="0" value="0" aria-label="Radar time">
+        <button class="step" id="mapNext" aria-label="Later frame">▶</button>
+      </div>
+      <p class="at" id="mapTime"></p>
+      <div class="legendbar" aria-hidden="true"></div>
+      <div class="lgl"><span>Light rain</span><span>Heavy rain</span></div>
+      <p class="note" id="mapNote">Shows the last 2 hours of rain. Pinch or drag to move around.</p>
+      <p class="credit"><a href="https://www.rainviewer.com" target="_blank" rel="noopener">Weather data by Rain Viewer</a> · Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a></p>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div class="sheet" id="settings" role="dialog" aria-modal="true" aria-labelledby="setTitle" hidden>
     <div class="sheetBack" data-close></div>
@@ -424,6 +471,9 @@
       <div class="seg2" data-pref="temp"><button data-v="C">°C</button><button data-v="F">°F</button></div>
       <h4>Wind speed</h4>
       <div class="seg2" data-pref="wind"><button data-v="kmh">km/h</button><button data-v="mph">mph</button></div>
+      <h4>Widget view</h4>
+      <p class="note" style="margin-bottom:8px">A minimal full-screen view with just the temperature and icon. Add this page to your home screen to keep it as a shortcut.</p>
+      <a class="primary" href="/?widget=1" style="display:inline-block;text-decoration:none">Open widget view</a>
       <h4>Install</h4>
       <div id="installBox" class="note"></div>
       <h4>About</h4>
@@ -434,5 +484,6 @@
 
 <script src="/ratings.js"></script>
 <script src="/app.js"></script>
+<script src="/extras.js"></script>
 </body>
 </html>

@@ -408,7 +408,7 @@ function setBadges(src) {
 /* =========================================================
    MODULE: shared UI helpers
    ========================================================= */
-const toneOf = l => ({ Great: 'good', Ideal: 'good', Fair: 'mid', Okay: 'mid' })[l] || 'bad';
+const toneOf = l => ({ Great: 'good', Ideal: 'good', Best: 'good', Fair: 'mid', Okay: 'mid' })[l] || 'bad';
 const list = items => `<ul class="list">${items.map(x => `<li>${x}</li>`).join('')}</ul>`;
 const tile = (label, value, tone, hint) =>
   `<div class="tile ${tone}"><small>${label}</small><b>${value}</b><em>${hint}</em></div>`;
@@ -568,6 +568,8 @@ const GardenView = {
     this.wins = R.bestPlantingWindows(this.rated);
     this.sel = this.wins.length ? this.wins[0].start : 0;
     this.paintCrops(); this.paintWarn(); this.paintIrrigation(); this.paintBest(); this.paintAll(); this.paintSow();
+    this.paintCalendar();
+    Climate.ensure().then(() => this.paintCalendar());
     scrollToSel($('plantStrip'), this.sel);
   },
   pick(i) { this.sel = i; this.paintAll(); },
@@ -627,8 +629,50 @@ const GardenView = {
   paintSow() {
     const n = R.sowingNote(this.ctx.soilT, this.crop);
     $('sowNote').innerHTML = `<h3>What to sow</h3><p style="font-weight:700;margin-bottom:4px">${n.title}</p><p class="note">${n.text}</p>`;
+  },
+  paintCalendar() {
+    const el = $('calCard'), clim = Climate.data;
+    if (!clim) {
+      el.innerHTML = `<h3>Crop calendar</h3><p class="note">${Climate.failed ? 'Climate data is not available for this location.' : 'Loading climate for your location…'}</p>`;
+      return;
+    }
+    const cal = R.cropCalendar(clim, this.crop), now = new Date(data.now).getMonth();
+    const mName = (m, style) => new Date(2000, m, 1).toLocaleDateString(undefined, { month: style });
+    const best = cal.map((c, m) => (c.label === 'Best' ? mName(m, 'short') : null)).filter(Boolean);
+    const sug = R.cropsForMonth(clim, now);
+    el.innerHTML = `<h3>Crop calendar · ${this.crop.name}</h3>` +
+      `<div class="legend"><span><i class="good"></i>Best</span><span><i class="mid"></i>Okay</span><span><i class="bad"></i>Avoid</span></div>` +
+      `<div class="cal" role="list">` + cal.map((c, m) =>
+        `<div class="cm ${toneOf(c.label)}${m === now ? ' now' : ''}" role="listitem" aria-label="${mName(m, 'long')}: ${c.label}"><i></i><span>${mName(m, 'narrow')}</span></div>`).join('') + `</div>` +
+      `<p class="note">${best.length ? 'Best months to plant ' + this.crop.name + ': ' + best.join(', ') + '.' : 'No month is a clear best for ' + this.crop.name + ' here. Try another crop.'}</p>` +
+      `<h4>Good to plant this month</h4>` +
+      (sug.length ? `<div class="suggest">${sug.map(x => `<button type="button" class="crop" data-k="${x.key}">${R.CROPS[x.key].emoji} ${R.CROPS[x.key].name}</button>`).join('')}</div>`
+                  : `<p class="note">Nothing is ideal this month. Check the calendar for the next good month.</p>`);
   }
 };
+// Monthly climate for the location (cached on the phone for 30 days)
+const Climate = {
+  data: null, failed: false, key: null,
+  async ensure() {
+    if (!curPlace) return;
+    const key = (+curPlace.lat).toFixed(1) + ',' + (+curPlace.lon).toFixed(1);
+    if (this.key === key && (this.data || this.failed)) return;
+    this.key = key; this.data = null; this.failed = false;
+    const cached = Store.get('climate.' + key, null);
+    if (cached && Date.now() - cached.at < 30 * 864e5) { this.data = cached.d; return; }
+    try {
+      const d = await (await fetch(`/api/climate?lat=${curPlace.lat}&lon=${curPlace.lon}`)).json();
+      if (this.key !== key) return;
+      if (d.error || !d.meanT || d.meanT.some(v => v == null)) throw new Error('bad climate');
+      this.data = d; Store.set('climate.' + key, { at: Date.now(), d });
+    } catch (e) { if (this.key === key) this.failed = true; }
+  }
+};
+$('calCard').addEventListener('click', e => {
+  const b = e.target.closest('.crop');
+  if (!b || !Ctx) return;
+  Prefs.crop = b.dataset.k; savePrefs(); GardenView.render(Ctx); paintWeather();
+});
 $('crops').addEventListener('click', e => {
   const b = e.target.closest('.crop');
   if (!b || !Ctx) return;
@@ -849,6 +893,7 @@ async function load(lat, lon, name) {
     setCity(name); Saved.render();
     $('msg').textContent = '';
     applyData(d);
+    if (!booted) { booted = true; bootExtras(); }
 
     try {
       if (!R) throw new Error('ratings.js did not load');
@@ -923,6 +968,27 @@ $('soundBtn').addEventListener('click', async () => {
   else if (!(await Sound.start(data ? soundKindFor(data) : 'calm'))) $('msg').textContent = 'Sound is not supported in this browser.';
   paintSound();
 });
+
+/* ---------- widget view, shortcuts and auto-refresh ---------- */
+const params = new URLSearchParams(location.search);
+const WIDGET = params.get('widget') === '1';
+let booted = false;
+function bootExtras() {                       // opens ?view=garden|run|sleep|map after the first load
+  const v = params.get('view');
+  if (v === 'map' && window.Radar) Radar.open();
+  else if (['garden', 'run', 'sleep'].includes(v)) Tabs.show(v);
+}
+if (WIDGET) {
+  document.documentElement.classList.add('wmode');
+  $('card').addEventListener('click', () => { location.href = '/'; });
+}
+const STALE_MS = 10 * 60000;
+function refreshIfStale(force) {
+  if (!curPlace || document.hidden) return;
+  if (Date.now() - loadedAt > STALE_MS && (force || Tabs.active === 'weather' || WIDGET)) load(curPlace.lat, curPlace.lon, curPlace.name);
+}
+setInterval(() => refreshIfStale(false), 60000);
+document.addEventListener('visibilitychange', () => refreshIfStale(true));
 
 applyUnits();
 setMode('day');
