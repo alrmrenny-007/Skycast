@@ -163,6 +163,10 @@ const I18N = (() => {
   const RAW = `
 Loading… ¦ Chargement… ¦ लोड हो रहा है… ¦ Ń gbé e wá… ¦ Ana lodawa…
 Go ¦ OK ¦ जाएँ ¦ Lọ ¦ Je
+Finding your location… ¦ Recherche de votre position… ¦ आपकी लोकेशन ढूँढ रहे हैं… ¦ Ń wá ibi tí o wà… ¦ Ana neman wurinka…
+Reading the sky… ¦ Lecture du ciel… ¦ आसमान पढ़ रहे हैं… ¦ Ń ka ojú ọ̀run… ¦ Ana karanta sama…
+Almost there… ¦ Presque terminé… ¦ बस थोड़ा और… ¦ Ó fẹ́rẹ̀ parí… ¦ Kusa ya ƙare…
+Updating… ¦ Mise à jour… ¦ अपडेट हो रहा है… ¦ Ń ṣàtúnṣe… ¦ Ana sabuntawa…
 Search a city ¦ Rechercher une ville ¦ शहर खोजें ¦ Wá ìlú kan ¦ Nemo birni
 Use my location ¦ Utiliser ma position ¦ मेरी लोकेशन ¦ Lo ibi tí mo wà ¦ Yi amfani da wurina
 Save this city ¦ Enregistrer cette ville ¦ यह शहर सहेजें ¦ Fi ìlú yìí pamọ́ ¦ Ajiye wannan birni
@@ -508,4 +512,118 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
   }
   document.documentElement.lang = lang;
   if (lang !== 'en') walk(document.body);
+})();
+
+/* =========================================================
+   LOADING ANIMATIONS
+   - first visit: a friendly animated loading screen instead of an empty page
+   - next visits: the last weather shows instantly while fresh data loads
+   - a thin shimmer bar at the top while updating, and a soft entrance when data arrives
+   ========================================================= */
+(function loadingAnimations() {
+  const card = document.getElementById('card');
+  if (!card) return;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    #boot { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 14px; transition: opacity .6s; }
+    #boot.off { opacity: 0; pointer-events: none; }
+    #boot .bi { width: 190px; height: 190px; animation: bootFloat 3.2s ease-in-out infinite; filter: drop-shadow(0 14px 16px rgba(0,0,0,.3)); }
+    #boot .bi svg { width: 100%; height: 100%; }
+    #boot .bt { font-size: 15px; opacity: .85; min-height: 20px; }
+    #boot .dots { display: flex; gap: 7px; }
+    #boot .dots i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .35; animation: bootDot 1.2s infinite ease-in-out; }
+    #boot .dots i:nth-child(2) { animation-delay: .18s; } #boot .dots i:nth-child(3) { animation-delay: .36s; }
+    @keyframes bootFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes bootDot { 0%,80%,100% { transform: scale(.7); opacity: .3; } 40% { transform: scale(1.15); opacity: 1; } }
+
+    #bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 31; overflow: hidden; opacity: 0;
+           transition: opacity .35s; pointer-events: none; }
+    #bar.on { opacity: 1; }
+    #bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: linear-gradient(90deg, transparent, #fff, transparent);
+             animation: barRun 1.1s ease-in-out infinite; }
+    @keyframes barRun { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+    .reveal #big { animation: popIn .85s cubic-bezier(.2,.9,.3,1.2) both; }
+    .reveal .temp { animation: riseIn .6s ease both; }
+    .reveal .cap, .reveal .sun, .reveal .chips { animation: riseIn .7s .15s ease both; }
+    .reveal .it { animation: riseIn .5s .45s ease both; }
+    .reveal .it:nth-child(2) { animation-delay: .5s; } .reveal .it:nth-child(3) { animation-delay: .55s; }
+    .reveal .it:nth-child(4) { animation-delay: .6s; } .reveal .it:nth-child(5) { animation-delay: .65s; }
+    .reveal .it:nth-child(n+6) { animation-delay: .7s; }
+    @keyframes popIn { from { opacity: 0; transform: scale(.6) translateY(24px); } to { opacity: 1; transform: none; } }
+    @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  `;
+  document.head.appendChild(css);
+
+  const CK = 'skycast.cache';
+  let boot = null, bootTimer = 0, revealed = false, restoring = false, busy = 0, firstDone = false;
+
+  /* thin shimmer bar at the top of the screen */
+  const bar = document.createElement('div');
+  bar.id = 'bar'; bar.setAttribute('aria-hidden', 'true'); bar.innerHTML = '<i></i>';
+  card.appendChild(bar);
+  const syncBar = () => bar.classList.toggle('on', busy > 0 || !firstDone);
+
+  /* full loading screen (first visit only) */
+  function makeBoot() {
+    const h = new Date().getHours(), day = h >= 6 && h < 19;
+    boot = document.createElement('div');
+    boot.id = 'boot'; boot.setAttribute('role', 'status');
+    boot.style.background = day ? 'linear-gradient(180deg,#4f9ae4,#86bdf0 55%,#cfe5f8)' : 'linear-gradient(180deg,#1d2757,#27366f 55%,#34457f)';
+    boot.style.color = day ? '#0f2340' : '#ffffff';
+    boot.innerHTML = '<div class="bi">' + icon('partly', day, moonPhase(new Date())) + '</div>' +
+      '<div class="bt" id="bootText">Finding your location…</div><div class="dots"><i></i><i></i><i></i></div>';
+    card.appendChild(boot);
+    const msgs = ['Finding your location…', 'Reading the sky…', 'Almost there…'];
+    let i = 0;
+    bootTimer = setInterval(() => {
+      i = Math.min(i + 1, msgs.length - 1);
+      const t = document.getElementById('bootText');
+      if (t) t.textContent = msgs[i];
+    }, 2200);
+  }
+
+  /* data arrived: fade the loading screen out and play the entrance */
+  function reveal() {
+    if (boot) {
+      const b = boot; boot = null; clearInterval(bootTimer);
+      b.classList.add('off'); setTimeout(() => b.remove(), 700);
+    }
+    if (!revealed) {
+      revealed = true; card.classList.add('reveal');
+      setTimeout(() => card.classList.remove('reveal'), 2200);
+    }
+  }
+
+  /* remember the last weather so the next visit starts instantly */
+  const origApply = window.applyData, origLoad = window.load;
+  window.applyData = function (d) {
+    origApply(d);
+    if (!restoring && !/demo=/.test(location.search)) {
+      try { localStorage.setItem(CK, JSON.stringify({ at: Date.now(), place: curPlace, data: d })); } catch (e) { /* storage full */ }
+    }
+    reveal();
+  };
+  window.load = function () {
+    busy++; syncBar();
+    return Promise.resolve(origLoad.apply(this, arguments)).finally(() => { busy = Math.max(0, busy - 1); firstDone = true; reveal(); syncBar(); });
+  };
+
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(CK)); } catch (e) { /* none */ }
+  if (cached && cached.data && cached.place && Date.now() - cached.at < 86400000) {
+    try {
+      restoring = true;
+      curPlace = cached.place; setCity(cached.place.name); Saved.render();
+      window.applyData(cached.data);
+      document.getElementById('stime').textContent = 'Updating…';
+    } catch (e) { cached = null; } finally { restoring = false; }
+  } else cached = null;
+  if (!cached) makeBoot();
+  syncBar();
+
+  /* never animate forever */
+  setTimeout(() => { firstDone = true; syncBar(); reveal(); }, 20000);
 })();
