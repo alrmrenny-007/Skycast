@@ -627,3 +627,99 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
   /* never animate forever */
   setTimeout(() => { firstDone = true; syncBar(); reveal(); }, 20000);
 })();
+
+/* =========================================================
+   MORE ANIMATIONS
+   - slow drifting clouds and a glowing sun (or moon) in the sky
+   - shooting stars on clear nights
+   - smooth slide between Weather, Garden, Run and Sleep
+   - soft pop-up for Settings and the radar, and a press effect on buttons
+   ========================================================= */
+(function moreAnimations() {
+  const card = document.getElementById('card');
+  if (!card) return;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    #sky, #shoot { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+    #sky .cl { position: absolute; left: -45%; opacity: var(--co, .3); animation: cloudDrift linear infinite; will-change: left; }
+    #sky .cl svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 8px 10px rgba(0,0,0,.12)); }
+    .dark #sky .cl { filter: brightness(.55); opacity: calc(var(--co, .3) * .55); }
+    #card[data-view="sleep"] #sky .cl { opacity: .08; }
+    @keyframes cloudDrift { from { left: -45%; } to { left: 115%; } }
+
+    #sunglow { position: absolute; left: -110px; top: -110px; width: 360px; height: 360px; border-radius: 50%; opacity: 0;
+               background: radial-gradient(circle, rgba(255,214,102,.6), rgba(255,214,102,0) 65%);
+               transition: opacity 1.2s; animation: sunPulse 7s ease-in-out infinite; }
+    .light #sunglow { opacity: 1; }
+    .isnight.starry #sunglow { opacity: .75; background: radial-gradient(circle, rgba(196,208,255,.45), rgba(196,208,255,0) 65%); }
+    #card[data-view="sleep"] #sunglow, #card.light:not([data-view="weather"]) #sunglow { opacity: 0; }
+    @keyframes sunPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+
+    .ss { position: absolute; width: 110px; height: 2px; border-radius: 2px; opacity: 0;
+          background: linear-gradient(90deg, #fff, rgba(255,255,255,0));
+          transform: rotate(-32deg); animation: shootStar 1.1s ease-out forwards; }
+    @keyframes shootStar { 0% { opacity: 0; transform: translate(0,0) rotate(-32deg); } 12% { opacity: 1; }
+                           100% { opacity: 0; transform: translate(-240px,150px) rotate(-32deg); } }
+
+    .vin { animation: viewIn .38s cubic-bezier(.2,.8,.3,1) both; }
+    @keyframes viewIn { from { opacity: 0; transform: translateX(var(--dx, 24px)); } to { opacity: 1; transform: none; } }
+    .vin.pad > * { animation: cardIn .45s ease both; animation-delay: calc(var(--i, 0) * 45ms); }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+    .sheet:not([hidden]) .sheetBody { animation: sheetUp .35s cubic-bezier(.2,.8,.3,1); }
+    .sheet:not([hidden]) .sheetBack { animation: fadeIn .3s ease; }
+    .sheet:not([hidden]) .mapBox { animation: fadeIn .35s ease; }
+    @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .dbtn, .sbtn, .crop, .bar, .half, .chipx { transition: transform .12s ease; }
+    .dbtn:active, .sbtn:active, .crop:active, .bar:active, button.chipx:active { transform: scale(.92); }
+  `;
+  document.head.appendChild(css);
+
+  /* drifting clouds + sun glow */
+  const sky = document.createElement('div');
+  sky.id = 'sky'; sky.setAttribute('aria-hidden', 'true');
+  const clouds = [
+    { w: 210, top: 6,  dur: 95,  delay: -20, o: .34 }, { w: 150, top: 20, dur: 70,  delay: -55, o: .28 },
+    { w: 260, top: 32, dur: 120, delay: -90, o: .22 }, { w: 110, top: 12, dur: 60,  delay: -8,  o: .30 },
+    { w: 180, top: 42, dur: 105, delay: -40, o: .20 }
+  ];
+  sky.innerHTML = '<div id="sunglow"></div>' + clouds.map(c =>
+    `<div class="cl" style="width:${c.w}px;top:${c.top}%;animation-duration:${c.dur}s;animation-delay:${c.delay}s;--co:${c.o}">` +
+    `<svg viewBox="0 0 120 120">${cloud('w', '')}</svg></div>`).join('');
+  card.insertBefore(sky, card.firstChild);
+
+  /* shooting stars (clear nights only) */
+  const shoot = document.createElement('div');
+  shoot.id = 'shoot'; shoot.setAttribute('aria-hidden', 'true');
+  card.insertBefore(shoot, sky.nextSibling);
+  (function spawn() {
+    if (!still && !document.hidden && card.classList.contains('starry') && card.dataset.view !== 'sleep') {
+      const s = document.createElement('div');
+      s.className = 'ss';
+      s.style.left = (45 + Math.random() * 50) + '%';
+      s.style.top = (4 + Math.random() * 26) + '%';
+      shoot.appendChild(s);
+      setTimeout(() => s.remove(), 1400);
+    }
+    setTimeout(spawn, 5000 + Math.random() * 9000);
+  })();
+
+  /* slide between screens (left-to-right in the same order as the bottom buttons) */
+  const ORDER = ['garden', 'run', 'weather', 'sleep'];
+  const origShow = Tabs.show;
+  Tabs.show = function (name) {
+    const old = Tabs.active;
+    origShow.call(Tabs, name);
+    if (still || name === old) return;
+    const el = document.getElementById('view-' + name);
+    if (!el) return;
+    el.style.setProperty('--dx', (ORDER.indexOf(name) > ORDER.indexOf(old) ? 28 : -28) + 'px');
+    Array.prototype.forEach.call(el.children, (c, i) => c.style.setProperty('--i', Math.min(i, 8)));
+    el.classList.remove('vin'); void el.offsetWidth; el.classList.add('vin');
+    setTimeout(() => el.classList.remove('vin'), 900);
+  };
+})();
