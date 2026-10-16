@@ -723,3 +723,437 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
     setTimeout(() => el.classList.remove('vin'), 900);
   };
 })();
+
+/* =========================================================
+   DAILY EXTRAS
+   - "today in one sentence" + a read-aloud button
+   - checklist chips (umbrella, jacket, sunscreen, water, mask)
+   - My cities: compare all saved cities at a glance
+   - offline banner
+   - tap the weather icon for a little wiggle (and lightning in a storm)
+   ========================================================= */
+(function dailyExtras() {
+  const card = document.getElementById('card'), cap = document.getElementById('cap');
+  if (!card || !cap) return;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .sumrow { display: flex; gap: 8px; align-items: center; justify-content: center; max-width: 330px; margin: 6px auto 0; }
+    .sumrow p { font-size: 14px; line-height: 1.35; }
+    .sumrow .sbtn { flex: none; }
+    #need { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+    #need:empty { display: none; }
+    .wmode .sumrow, .wmode #need { display: none !important; }
+    #big { cursor: pointer; }
+    #big.wig { animation: wiggle .7s ease; }
+    @keyframes wiggle { 0%,100% { transform: rotate(0) scale(1); } 20% { transform: rotate(-8deg) scale(1.06); }
+                        40% { transform: rotate(7deg) scale(1.08); } 60% { transform: rotate(-4deg) scale(1.04); } 80% { transform: rotate(2deg); } }
+    @keyframes tapFlash { 0% { opacity: 0; } 15% { opacity: .65; } 30% { opacity: .05; } 45% { opacity: .55; } 100% { opacity: 0; } }
+    .crow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 2px; border: 0; border-top: 1px solid var(--edge);
+            background: none; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+    .crow:first-child { border-top: 0; }
+    .crow .cic { width: 46px; height: 46px; flex: none; } .crow .cic svg { width: 100%; height: 100%; }
+    .crow .cn { flex: 1; min-width: 0; } .crow .cn b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .crow .cn small { color: var(--ink2); font-size: 12px; } .crow .ct { font-size: 24px; font-weight: 700; }
+    #offline { position: absolute; top: calc(env(safe-area-inset-top) + 46px); left: 50%; transform: translateX(-50%); z-index: 32;
+               padding: 6px 14px; border-radius: 16px; background: var(--mid); color: #08121f; font-size: 12px; font-weight: 700;
+               white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  `;
+  document.head.appendChild(css);
+
+  /* ---------- today in one sentence + checklist ---------- */
+  const row = document.createElement('div');
+  row.className = 'sumrow';
+  row.innerHTML = '<p id="sumText"></p><button type="button" class="sbtn" id="speakBtn" aria-label="Read the weather aloud">🗣</button>';
+  const need = document.createElement('div');
+  need.id = 'need';
+  cap.insertAdjacentElement('afterend', row);
+  row.insertAdjacentElement('afterend', need);
+  const sumText = document.getElementById('sumText'), speakBtn = document.getElementById('speakBtn');
+  if (!('speechSynthesis' in window)) speakBtn.hidden = true;
+
+  function update() {
+    if (!data || !R) return;
+    const d = data, kind = kindOf(d.code);
+    const hours = (typeof Ctx !== 'undefined' && Ctx && Ctx.hours) ? Ctx.hours : (d.hourly || []);
+    const next = hours.slice(0, 12), nc = d.nowcast;
+    const wet = c => RAIN.includes(c) || STORM.includes(c);
+    const later = next.slice(1).find(h => wet(h.code) || (typeof h.pop === 'number' && h.pop >= 60));
+    const rainNow = wet(d.code) || (nc && nc.state === 'ongoing');
+    const feel = d.temp <= 0 ? 'Freezing' : d.temp <= 10 ? 'Cold' : d.temp <= 17 ? 'Cool' : d.temp <= 24 ? 'Mild' : d.temp <= 30 ? 'Warm' : d.temp <= 35 ? 'Hot' : 'Very hot';
+    const sky = { clear: d.isDay ? 'sunny' : 'clear', partly: 'partly cloudy', cloud: 'cloudy', fog: 'foggy', rain: 'rainy', storm: 'stormy', snow: 'snowy' }[kind];
+    let line;
+    if (SNOW.includes(d.code)) line = 'Snow is falling.';
+    else if (rainNow) line = 'It is raining now.';
+    else if (nc && nc.state === 'starts') line = 'Rain starts around ' + R.fmtTime(nc.startT) + '.';
+    else if (later) line = 'Rain expected around ' + R.fmtHour(later.t) + '.';
+    else line = 'No rain expected for the next 12 hours.';
+    sumText.textContent = `${feel} and ${sky}. ${line}`;
+
+    const uv = Math.max(0, ...next.slice(0, 8).filter(h => h.isDay).map(h => h.uv || 0));
+    const chips = [];
+    if (rainNow || later || SNOW.includes(d.code) || (nc && nc.state === 'starts')) chips.push('☂ Umbrella');
+    if (d.temp <= 5) chips.push('🧥 Warm coat'); else if (d.temp <= 15) chips.push('🧥 Jacket');
+    if (uv >= 6) chips.push('🧴 Sunscreen');
+    if (d.temp >= 30 || (d.temp >= 28 && hours[0] && (hours[0].humidity || 0) >= 70)) chips.push('💧 Drink water');
+    if (d.aqi != null && d.aqi > 100) chips.push('😷 Mask');
+    need.innerHTML = chips.map(t => `<span class="chipx">${t}</span>`).join('');
+  }
+  const prevApply = window.applyData, prevBadges = window.setBadges;
+  window.applyData = function (d) { prevApply(d); update(); };
+  window.setBadges = function (s) { prevBadges(s); update(); };      // runs once Run/Garden data is ready (adds UV)
+  update();
+
+  speakBtn.addEventListener('click', () => {
+    const ss = window.speechSynthesis;
+    if (ss.speaking) { ss.cancel(); return; }
+    let lang = 'en';
+    try { lang = JSON.parse(localStorage.getItem('skycast.lang')) || 'en'; } catch (e) { /* default */ }
+    const a = new SpeechSynthesisUtterance(`${curPlace ? curPlace.name : ''}. ${fmtT(data.temp)}. ${cap.textContent}.`);
+    a.lang = { en: 'en-US', fr: 'fr-FR', hi: 'hi-IN', yo: 'yo-NG', ha: 'ha-NG' }[lang] || 'en-US';
+    const b = new SpeechSynthesisUtterance(sumText.textContent);
+    b.lang = 'en-US';
+    ss.speak(a); ss.speak(b);
+  });
+
+  /* ---------- tap the icon ---------- */
+  const big = document.getElementById('big');
+  big.addEventListener('click', () => {
+    big.classList.remove('wig'); void big.offsetWidth; big.classList.add('wig');
+    setTimeout(() => big.classList.remove('wig'), 800);
+    if (navigator.vibrate) navigator.vibrate(15);
+    if (data && kindOf(data.code) === 'storm') {
+      const f = card.querySelector('.flash');
+      if (f) { f.style.animation = 'none'; void f.offsetWidth; f.style.animation = 'tapFlash .7s'; setTimeout(() => { f.style.animation = ''; }, 800); }
+    }
+  });
+
+  /* ---------- My cities ---------- */
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet'; sheet.id = 'citiesSheet'; sheet.hidden = true;
+  sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-labelledby', 'citiesTitle');
+  sheet.innerHTML = '<div class="sheetBack" data-cclose="1"></div><div class="sheetBody"><div class="row"><h2 id="citiesTitle">My cities</h2>' +
+    '<button type="button" class="x" data-cclose="1" aria-label="Close">✕</button></div><div id="citiesList"></div></div>';
+  card.appendChild(sheet);
+  const listEl = document.getElementById('citiesList');
+
+  async function openCities() {
+    sheet.hidden = false;
+    const cities = Saved.list.slice(0, 8);
+    if (!cities.length) { listEl.innerHTML = '<p class="note">No saved cities yet. Tap the city name, then ☆ Save this city.</p>'; return; }
+    listEl.innerHTML = '<p class="note">Loading…</p>';
+    const res = await Promise.all(cities.map(p => fetch(`/api/weather?lat=${p.lat}&lon=${p.lon}`).then(r => r.json()).catch(() => null)));
+    const ph = moonPhase(new Date());
+    listEl.innerHTML = cities.map((p, i) => {
+      const d = res[i];
+      if (!d || d.error) return `<button type="button" class="crow" data-i="${i}"><span class="cn"><b>${esc(p.name)}</b><small>Could not load</small></span></button>`;
+      const d0 = d.daily[0];
+      return `<button type="button" class="crow" data-i="${i}"><span class="cic">${icon(kindOf(d.code), d.isDay, ph)}</span>` +
+        `<span class="cn"><b>${esc(p.name)}</b><small>${NAMES[d.code] || 'Weather'} · H ${fmtT(d0.max)} L ${fmtT(d0.min)} · ${d.now.slice(11, 16)}</small></span>` +
+        `<span class="ct">${fmtT(d.temp)}</span></button>`;
+    }).join('');
+  }
+  listEl.addEventListener('click', e => {
+    const b = e.target.closest('.crow');
+    const p = b && Saved.list[+b.dataset.i];
+    if (p) { sheet.hidden = true; openSearch(false); Tabs.show('weather'); load(p.lat, p.lon, p.name); }
+  });
+  sheet.addEventListener('click', e => { if (e.target.closest('[data-cclose]')) sheet.hidden = true; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !sheet.hidden) sheet.hidden = true; });
+
+  const cbtn = document.createElement('button');
+  cbtn.type = 'button'; cbtn.className = 'savebtn'; cbtn.id = 'citiesBtn'; cbtn.textContent = '🏙 Compare my cities';
+  cbtn.addEventListener('click', () => { openSearch(false); openCities(); });
+  document.getElementById('searchBox').appendChild(cbtn);
+
+  /* ---------- offline banner ---------- */
+  const off = document.createElement('div');
+  off.id = 'offline'; off.hidden = true; off.setAttribute('role', 'status');
+  card.appendChild(off);
+  function net() {
+    if (navigator.onLine === false) { off.textContent = 'Offline · showing your last saved weather'; off.hidden = false; }
+    else if (!off.hidden) {
+      off.textContent = 'Back online'; setTimeout(() => { off.hidden = true; }, 1800);
+      if (curPlace) load(curPlace.lat, curPlace.lon, curPlace.name);
+    }
+  }
+  window.addEventListener('offline', net); window.addEventListener('online', net);
+  net();
+})();
+
+/* =========================================================
+   MORE FEATURES
+   - pull down to refresh
+   - temperature graph (tap the big temperature)
+   - first-time tour (and "Show the tour" in Settings)
+   - run log (Run screen) and garden notes with due dates (Garden screen)
+   - Auto / Light / Dark switch (Settings)
+   ========================================================= */
+(function moreFeatures() {
+  const card = document.getElementById('card');
+  if (!card) return;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const wmode = document.documentElement.classList.contains('wmode');
+
+  const css = document.createElement('style');
+  css.textContent = `
+    html, body { overscroll-behavior-y: contain; }
+    #ptr { position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 50%; width: 38px; height: 38px; border-radius: 50%;
+           display: flex; align-items: center; justify-content: center; z-index: 33; opacity: 0; pointer-events: none;
+           background: var(--glass); border: 1px solid var(--edge); color: var(--ink); transform: translate(-50%, -60px);
+           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    #ptr.spin svg { animation: ptrSpin .8s linear infinite; }
+    @keyframes ptrSpin { to { transform: rotate(360deg); } }
+    #temp { cursor: pointer; }
+    .dbtn { position: relative; }
+    .dbtn.hasdue::after { content: ""; position: absolute; top: 5px; right: 5px; width: 10px; height: 10px; border-radius: 50%;
+                          background: var(--bad); border: 2px solid var(--dock); }
+
+    #tour { position: absolute; inset: 0; z-index: 40; }
+    #tourHole { position: absolute; border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(5,10,30,.66); transition: all .3s ease; pointer-events: none; }
+    #tourTip { position: absolute; left: 16px; right: 16px; background: var(--dock); color: var(--ink); border-radius: 20px;
+               padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+    #tourText { font-size: 15px; line-height: 1.4; margin-bottom: 12px; }
+    #tourTip .tbar { display: flex; justify-content: space-between; align-items: center; }
+    #tourDots i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink2); margin-right: 5px; opacity: .5; }
+    #tourDots i.on { opacity: 1; background: var(--ink); }
+
+    .lbars { display: flex; gap: 6px; height: 64px; align-items: flex-end; margin: 12px 0; }
+    .lbars .lb { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+    .lbars .lb span { display: block; width: 100%; border-radius: 6px 6px 0 0; background: var(--good); min-height: 4px; }
+    .lbars .lb small { font-size: 10px; color: var(--ink2); }
+    .logform, .nform { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+    .logform input, .nform input { flex: 1; min-width: 70px; padding: 9px 12px; border-radius: 14px; border: 0; font-size: 15px;
+                                   background: var(--well); color: var(--ink); }
+    .nform #noteText { flex: 2 1 100%; }
+    .nlist { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .nlist li { display: flex; align-items: center; gap: 10px; }
+    .nlist li.done .ntx { opacity: .5; text-decoration: line-through; }
+    .nlist .ntx { flex: 1; font-size: 14px; } .nlist .ntx small { display: block; font-size: 11px; color: var(--ink2); text-decoration: none; }
+    .nchk { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ink2); background: none; color: var(--ink); cursor: pointer; flex: none; font-size: 14px; }
+    .nchk[aria-pressed="true"] { background: var(--good); border-color: var(--good); color: #08121f; }
+  `;
+  document.head.appendChild(css);
+
+  /* small helper: a pop-up sheet like Settings */
+  function makeSheet(id, title, inner) {
+    const s = document.createElement('div');
+    s.className = 'sheet'; s.id = id; s.hidden = true;
+    s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-labelledby', id + 'T');
+    s.innerHTML = '<div class="sheetBack" data-x="1"></div><div class="sheetBody"><div class="row"><h2 id="' + id + 'T">' + title + '</h2>' +
+      '<button type="button" class="x" data-x="1" aria-label="Close">✕</button></div>' + inner + '</div>';
+    s.addEventListener('click', e => { if (e.target.closest('[data-x]')) s.hidden = true; });
+    card.appendChild(s);
+    return s;
+  }
+
+  /* ---------- pull down to refresh ---------- */
+  const ptr = document.createElement('div');
+  ptr.id = 'ptr'; ptr.setAttribute('aria-hidden', 'true');
+  ptr.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>';
+  card.appendChild(ptr);
+  const views = document.getElementById('views');
+  let y0 = null, x0 = 0, pull = 0, refreshing = false;
+  views.addEventListener('touchstart', e => {
+    if (views.scrollTop <= 0 && !refreshing) { y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; pull = 0; } else y0 = null;
+  }, { passive: true });
+  views.addEventListener('touchmove', e => {
+    if (y0 === null) return;
+    const dy = e.touches[0].clientY - y0, dx = e.touches[0].clientX - x0;
+    if (dy <= 0 || Math.abs(dx) > dy) { ptr.style.opacity = 0; return; }
+    pull = Math.min(dy * 0.55, 80);
+    ptr.style.transition = 'none'; ptr.style.opacity = Math.min(1, pull / 50);
+    ptr.style.transform = `translate(-50%, ${pull - 40}px) rotate(${pull * 4}deg)`;
+  }, { passive: true });
+  views.addEventListener('touchend', async () => {
+    if (y0 === null) return;
+    y0 = null; ptr.style.transition = 'transform .25s, opacity .25s';
+    if (pull >= 55 && curPlace) {
+      refreshing = true; ptr.classList.add('spin'); ptr.style.transform = 'translate(-50%, 28px)'; ptr.style.opacity = 1;
+      try { await load(curPlace.lat, curPlace.lon, curPlace.name); } finally { refreshing = false; ptr.classList.remove('spin'); }
+    }
+    ptr.style.opacity = 0; ptr.style.transform = 'translate(-50%, -60px)'; pull = 0;
+  });
+
+  /* ---------- temperature graph ---------- */
+  const graph = makeSheet('graphSheet', 'Temperature today', '<div id="graphBody"></div>');
+  const graphBody = document.getElementById('graphBody');
+  function openGraph() {
+    if (wmode || !data || !data.hourly || data.hourly.length < 2) return;
+    const hs = data.hourly, n = hs.length, Wd = 320, Ht = 130, px = 14, py = 20;
+    const T = hs.map(h => h.temp), lo = Math.min(...T) - 1, hi = Math.max(...T) + 1;
+    const X = i => px + (Wd - 2 * px) * i / (n - 1), Y = t => py + (Ht - 2 * py) * (1 - (t - lo) / (hi - lo || 1));
+    let d = `M${X(0)},${Y(T[0])}`;
+    for (let i = 1; i < n; i++) { const c = (X(i - 1) + X(i)) / 2; d += ` C${c},${Y(T[i - 1])} ${c},${Y(T[i])} ${X(i)},${Y(T[i])}`; }
+    const iMax = T.indexOf(Math.max(...T)), iMin = T.indexOf(Math.min(...T));
+    const mark = i => `<text x="${X(i)}" y="${Y(T[i]) - 9}" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor">${fmtT(T[i])}</text>`;
+    let ticks = '';
+    hs.forEach((h, i) => { if (i % 4 === 0) ticks += `<text x="${X(i)}" y="${Ht + 14}" text-anchor="middle" font-size="9" fill="currentColor" opacity=".65">${i === 0 ? 'Now' : R.fmtShort(h.t)}</text>`; });
+    graphBody.innerHTML = `<svg class="chartsvg" viewBox="0 0 ${Wd} ${Ht + 20}" role="img" aria-label="Temperature over the next 24 hours">` +
+      `<path d="${d} L${X(n - 1)},${Ht} L${X(0)},${Ht} Z" fill="url(#areaGrad)"/>` +
+      `<path d="${d}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>` +
+      mark(iMax) + (iMin !== iMax ? mark(iMin) : '') +
+      `<line id="gLine" y1="${py}" y2="${Ht}" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="3 3"/>` +
+      `<circle id="gDot" r="6" fill="#fff" stroke="currentColor" stroke-width="3"/>${ticks}</svg>` +
+      `<input type="range" class="scrub" id="gScrub" min="0" max="${n - 1}" value="0" aria-label="Pick an hour">` +
+      `<p class="at" id="gAt"></p>`;
+    const upd = () => {
+      const i = +document.getElementById('gScrub').value, h = hs[i], x = X(i), y = Y(h.temp);
+      const l = document.getElementById('gLine'), o = document.getElementById('gDot');
+      l.setAttribute('x1', x); l.setAttribute('x2', x); o.setAttribute('cx', x); o.setAttribute('cy', y);
+      document.getElementById('gAt').innerHTML = `<b>${i === 0 ? 'Now' : R.fmtHour(h.t)}</b> · ${fmtT(h.temp)} · ${NAMES[h.code] || ''}` +
+        (typeof h.pop === 'number' && h.pop > 0 ? ` · ${h.pop}% rain` : '');
+    };
+    document.getElementById('gScrub').oninput = upd; upd();
+    graph.hidden = false;
+  }
+  document.getElementById('temp').addEventListener('click', openGraph);
+
+  /* ---------- first-time tour ---------- */
+  const STEPS = [
+    ['#temp', 'Tap the big temperature to see today\'s graph.'],
+    ['.dock .dgroup:first-child', 'Garden planner and Run planner: plan your planting, watering and runs.'],
+    ['#toggle', 'Switch the forecast between the next hours and the week.'],
+    ['.dock .dgroup:last-child', 'Sleep forecast, and Settings for language, units and dark mode.'],
+    ['#city', 'Tap the city to search, save cities and compare them.'],
+    ['.sright', 'Rain radar, share a picture of the weather, and weather sounds.']
+  ];
+  const tour = document.createElement('div');
+  tour.id = 'tour'; tour.hidden = true;
+  tour.innerHTML = '<div id="tourHole"></div><div id="tourTip"><p id="tourText"></p><div class="tbar"><span id="tourDots"></span>' +
+    '<span><button type="button" class="linkbtn" id="tourSkip">Skip</button> <button type="button" class="primary" id="tourNext">Next</button></span></div></div>';
+  card.appendChild(tour);
+  const hole = document.getElementById('tourHole'), tip = document.getElementById('tourTip');
+  let ti = 0;
+  function place() {
+    const el = document.querySelector(STEPS[ti][0]);
+    if (!el) { step(); return; }
+    const c = card.getBoundingClientRect(), r = el.getBoundingClientRect(), pad = 8;
+    hole.style.left = (r.left - c.left - pad) + 'px'; hole.style.top = (r.top - c.top - pad) + 'px';
+    hole.style.width = (r.width + pad * 2) + 'px'; hole.style.height = (r.height + pad * 2) + 'px';
+    document.getElementById('tourText').textContent = STEPS[ti][1];
+    document.getElementById('tourDots').innerHTML = STEPS.map((_, i) => `<i class="${i === ti ? 'on' : ''}"></i>`).join('');
+    document.getElementById('tourNext').textContent = ti === STEPS.length - 1 ? 'Done' : 'Next';
+    const below = r.top - c.top < c.height * 0.5;
+    tip.style.top = below ? (r.bottom - c.top + 18) + 'px' : 'auto';
+    tip.style.bottom = below ? 'auto' : (c.bottom - r.top + 18) + 'px';
+  }
+  function endTour() { tour.hidden = true; Store.set('tour', 1); }
+  function step() { ti++; if (ti >= STEPS.length) endTour(); else place(); }
+  function startTour() { if (wmode) return; ti = 0; Tabs.show('weather'); tour.hidden = false; place(); }
+  document.getElementById('tourNext').addEventListener('click', step);
+  document.getElementById('tourSkip').addEventListener('click', endTour);
+  window.addEventListener('resize', () => { if (!tour.hidden) place(); });
+  if (!wmode && !Store.get('tour', 0)) {
+    const wait = setInterval(() => { if (data && !document.getElementById('boot')) { clearInterval(wait); setTimeout(startTour, 1200); } }, 400);
+    setTimeout(() => clearInterval(wait), 60000);
+  }
+
+  /* ---------- run log (Run screen) ---------- */
+  const logCard = document.createElement('article');
+  logCard.className = 'glass'; logCard.id = 'logCard';
+  document.getElementById('view-run').appendChild(logCard);
+  const getLog = () => Store.get('runlog', []);
+  function paintLog() {
+    const log = getLog(), now = new Date();
+    const days = [...Array(7)].map((_, i) => { const d = new Date(now); d.setDate(d.getDate() - (6 - i)); return ymd(d); });
+    const recent = log.filter(x => days.includes(x.d));
+    const km = days.map(d => log.filter(x => x.d === d).reduce((s, x) => s + x.km, 0));
+    const dist = recent.reduce((s, x) => s + x.km, 0), mins = recent.reduce((s, x) => s + x.min, 0), max = Math.max(...km, 1);
+    const sec = dist > 0 ? Math.round(mins / dist * 60) : 0;
+    logCard.innerHTML = `<h3>Run log</h3><div class="tiles">` +
+      `<div class="tile"><small>Last 7 days</small><b>${dist.toFixed(1)} km</b><em>${recent.length} run${recent.length === 1 ? '' : 's'}</em></div>` +
+      `<div class="tile"><small>Average pace</small><b>${sec ? Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') : '--'}</b><em>min per km</em></div></div>` +
+      `<div class="lbars">${days.map((d, i) => `<div class="lb"><span style="height:${Math.max(4, km[i] / max * 100)}%"></span>` +
+        `<small>${new Date(d + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'narrow' })}</small></div>`).join('')}</div>` +
+      `<div class="logform"><input id="logKm" type="number" inputmode="decimal" min="0" step="0.1" placeholder="km" aria-label="Distance in kilometres">` +
+      `<input id="logMin" type="number" inputmode="numeric" min="0" step="1" placeholder="minutes" aria-label="Time in minutes">` +
+      `<button type="button" class="primary" id="logAdd">Add run</button></div>` +
+      (log.length ? `<ul class="list">${log.slice(-5).reverse().map(x => `<li>${x.d.slice(5)} · ${x.km.toFixed(1)} km · ${x.min} min ` +
+        `<button type="button" class="linkbtn" data-del="${x.id}">remove</button></li>`).join('')}</ul>` : '');
+  }
+  logCard.addEventListener('click', e => {
+    if (e.target.closest('#logAdd')) {
+      const km = parseFloat(document.getElementById('logKm').value), min = parseFloat(document.getElementById('logMin').value);
+      if (!(km > 0) || !(min > 0)) return;
+      const log = getLog(); log.push({ id: Date.now(), d: ymd(new Date()), km, min });
+      Store.set('runlog', log.slice(-200)); paintLog();
+    } else {
+      const del = e.target.closest('[data-del]');
+      if (del) { Store.set('runlog', getLog().filter(x => String(x.id) !== del.dataset.del)); paintLog(); }
+    }
+  });
+  paintLog();
+
+  /* ---------- garden notes (Garden screen) ---------- */
+  const notesCard = document.createElement('article');
+  notesCard.className = 'glass'; notesCard.id = 'notesCard';
+  document.getElementById('view-garden').appendChild(notesCard);
+  const getNotes = () => Store.get('notes', []);
+  function paintNotes() {
+    const notes = getNotes(), t = ymd(new Date());
+    const sorted = notes.slice().sort((a, b) => (!!a.done - !!b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : 1));
+    notesCard.innerHTML = '<h3>Garden notes</h3>' + (sorted.length
+      ? `<ul class="nlist">${sorted.map(n => {
+          const late = !n.done && n.due && n.due < t, today = !n.done && n.due === t;
+          return `<li class="${n.done ? 'done' : ''}"><button type="button" class="nchk" data-id="${n.id}" aria-label="Mark done" aria-pressed="${!!n.done}">${n.done ? '✓' : ''}</button>` +
+            `<span class="ntx">${esc(n.text)}<small>${n.crop ? esc(n.crop) + ' · ' : ''}${n.due ? (late ? 'Overdue · ' : today ? 'Due today · ' : 'Due ') + n.due : 'No date'}</small></span>` +
+            `<button type="button" class="linkbtn" data-del="${n.id}" aria-label="Delete note">✕</button></li>`;
+        }).join('')}</ul>`
+      : '<p class="note">Write what you planted or need to do, and pick a date to be reminded.</p>') +
+      `<div class="nform"><input id="noteText" maxlength="120" placeholder="e.g. Water the tomatoes" aria-label="Note">` +
+      `<input id="noteDue" type="date" aria-label="Due date"><button type="button" class="primary" id="noteAdd">Add</button></div>`;
+    const dot = document.querySelector('.dock [data-go="garden"]');
+    if (dot) dot.classList.toggle('hasdue', notes.some(n => !n.done && n.due && n.due <= t));
+  }
+  notesCard.addEventListener('click', e => {
+    const notes = getNotes();
+    if (e.target.closest('#noteAdd')) {
+      const text = document.getElementById('noteText').value.trim();
+      if (!text) return;
+      const crop = Prefs.crop && Prefs.crop !== 'general' && R.CROPS[Prefs.crop] ? R.CROPS[Prefs.crop].name : '';
+      notes.push({ id: Date.now(), text, crop, due: document.getElementById('noteDue').value || '', done: false });
+      Store.set('notes', notes.slice(-100));
+    } else if (e.target.closest('[data-id]')) {
+      const n = notes.find(x => String(x.id) === e.target.closest('[data-id]').dataset.id);
+      if (n) { n.done = !n.done; Store.set('notes', notes); }
+    } else if (e.target.closest('[data-del]')) {
+      Store.set('notes', notes.filter(x => String(x.id) !== e.target.closest('[data-del]').dataset.del));
+    } else return;
+    paintNotes();
+  });
+  paintNotes();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) paintNotes(); });
+
+  /* ---------- Auto / Light / Dark ---------- */
+  Prefs.theme = Prefs.theme || 'auto';
+  function applyTheme() {
+    let c = card.className;
+    if (Prefs.theme === 'dark') c = c.replace(/\blight\b/, 'dark');
+    else if (Prefs.theme === 'light') c = c.replace(/\bdark\b/, 'light').replace(/\bstarry\b/, '');
+    c = c.replace(/\s+/g, ' ').trim();
+    if (c !== card.className) card.className = c;
+  }
+  const prevApply = window.applyData, prevRefresh = window.refresh;
+  window.applyData = function (d) { prevApply(d); applyTheme(); };
+  window.refresh = function () { prevRefresh(); applyTheme(); };
+
+  const sheetBody = document.querySelector('#settings .sheetBody');
+  if (sheetBody) {
+    const h = document.createElement('h4'); h.textContent = 'Appearance';
+    const seg = document.createElement('div');
+    seg.className = 'seg2'; seg.dataset.pref = 'theme';
+    seg.innerHTML = '<button data-v="auto">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button>';
+    const h2 = document.createElement('h4'); h2.textContent = 'Help';
+    const tb = document.createElement('button');
+    tb.type = 'button'; tb.className = 'primary'; tb.textContent = 'Show the tour';
+    tb.addEventListener('click', () => { openSettings(false); startTour(); });
+    [h, seg, h2, tb].forEach(x => sheetBody.appendChild(x));
+  }
+  if (typeof paintSeg === 'function') paintSeg();
+  applyTheme();
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { graph.hidden = true; if (!tour.hidden) endTour(); } });
+})();
