@@ -1157,3 +1157,152 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { graph.hidden = true; if (!tour.hidden) endTour(); } });
 })();
+
+/* =========================================================
+   GLASS LOOK + RAIN AND THUNDER FALLING FROM THE CLOUD
+   - the forecast sheet, bottom bar and buttons become frosted glass
+   - in rain, streaks fall straight out from under the big cloud
+   - in a thunderstorm, lightning strikes below the cloud, the cloud lights up and the screen flashes
+   ========================================================= */
+(function glassAndStorm() {
+  const card = document.getElementById('card'), big = document.getElementById('big'), panel = document.getElementById('panel');
+  if (!card || !big || !panel) return;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    /* ---------- glass ---------- */
+    .panel { position: relative; }
+    #glass { position: absolute; inset: 0; z-index: 0; pointer-events: none;
+             background: linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,.07));
+             backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%); }
+    .panel #hillBox, .panel .panelBody { position: relative; z-index: 1; }
+    .hill .fillp { fill: transparent; }
+    .hill > path:nth-child(2) { stroke: rgba(255,255,255,.55); stroke-width: 1.6; }
+    .panelBody { background: transparent; }
+    .dock { background: rgba(255,255,255,.10); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%);
+            border-top: 1px solid rgba(255,255,255,.28); }
+    .chip, .dbtn { position: relative; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        background: radial-gradient(circle at 30% 18%, rgba(255,255,255,.5), rgba(255,255,255,.1) 58%), rgba(255,255,255,.07);
+        box-shadow: inset 0 1px 1px rgba(255,255,255,.6), inset 0 -7px 12px rgba(0,0,0,.16), 0 9px 18px rgba(0,0,0,.24); }
+    .chip::before, .dbtn::before { content: ""; position: absolute; top: 4px; left: 9px; width: 40%; height: 20%; border-radius: 50%;
+        background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,0)); transform: rotate(-18deg); pointer-events: none; }
+    .sbtn { background: rgba(255,255,255,.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 1px 1px rgba(255,255,255,.5); }
+    @supports (background: color-mix(in srgb, red 50%, transparent)) {
+      #glass { background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.05)), color-mix(in srgb, var(--panel) 42%, transparent); }
+      .dock { background: color-mix(in srgb, var(--dock) 46%, transparent); }
+    }
+    .light .dock { background: rgba(255,255,255,.28); }
+    .rainy .fx { opacity: .65; }
+
+    /* ---------- rain under the cloud ---------- */
+    #big { position: relative; }
+    #big .ic { position: relative; z-index: 1; }
+    #big.hascurtain .drop { display: none; }
+    #rainCurtain, #bolt { position: absolute; left: 50%; top: 61%; width: 126px; margin-left: -63px; height: var(--rh, 180px); pointer-events: none; z-index: 0; }
+    #rainCurtain { overflow: hidden;
+                   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 10%, #000 78%, transparent);
+                   mask-image: linear-gradient(180deg, transparent 0, #000 10%, #000 78%, transparent); }
+    #rainCurtain i { position: absolute; top: -30px; width: 2px; border-radius: 2px; opacity: 0;
+                     background: linear-gradient(180deg, rgba(200,230,255,0), rgba(200,230,255,.95));
+                     animation: rcFall var(--d, .9s) linear var(--dl, 0s) infinite; }
+    @keyframes rcFall { 0% { transform: translate(0,0) skewX(-8deg); opacity: 0; } 12% { opacity: .95; }
+                        100% { transform: translate(-10px, var(--rh, 180px)) skewX(-8deg); opacity: .85; } }
+
+    /* ---------- thunder under the cloud ---------- */
+    #bolt { opacity: 0; }
+    #bolt svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 6px #9fd0ff) drop-shadow(0 0 16px #5aa9ff); }
+    #bolt.on { animation: boltFlash .55s steps(1, end); }
+    @keyframes boltFlash { 0% { opacity: 1; } 18% { opacity: .15; } 30% { opacity: 1; } 55% { opacity: .35; } 70% { opacity: 1; } 100% { opacity: 0; } }
+    #cloudGlow { position: absolute; left: 50%; top: 6%; width: 230px; height: 130px; margin-left: -115px; border-radius: 50%;
+                 z-index: 0; pointer-events: none; opacity: 0;
+                 background: radial-gradient(ellipse, rgba(160,205,255,.75), rgba(160,205,255,0) 68%); }
+    #cloudGlow.on { animation: glowPulse .8s ease-out; }
+    @keyframes glowPulse { 0% { opacity: 0; } 12% { opacity: 1; } 28% { opacity: .35; } 42% { opacity: .9; } 100% { opacity: 0; } }
+    #big.strike .bolt { filter: drop-shadow(0 0 16px #bfe0ff) brightness(1.8); }
+    @keyframes thunderFlash { 0% { opacity: 0; } 14% { opacity: .55; } 26% { opacity: .05; } 40% { opacity: .5; } 100% { opacity: 0; } }
+  `;
+  document.head.appendChild(css);
+
+  /* ---------- frosted-glass sheet shaped like the hill ---------- */
+  const glass = document.createElement('div');
+  glass.id = 'glass'; glass.setAttribute('aria-hidden', 'true');
+  const hillY = x => 26 + 9 * Math.sin(x / 380 * Math.PI * 1.8 + .4) + 4 * Math.sin(x / 380 * Math.PI * 4.6 + 1.3);
+  const pts = [];
+  for (let x = 0; x <= 380; x += 6) pts.push(`${(x / 380 * 100).toFixed(2)}% ${(hillY(x) * 60 / 70).toFixed(1)}px`);
+  const poly = `polygon(${pts.join(',')},100% 100%,0% 100%)`;
+  glass.style.clipPath = poly; glass.style.webkitClipPath = poly;
+  panel.insertBefore(glass, panel.firstChild);
+
+  /* ---------- a little gloss on the big rain, storm and snow clouds ---------- */
+  const origIcon = window.icon;
+  window.icon = function (kind, isDay, p) {
+    const s = origIcon(kind, isDay, p);
+    return ['rain', 'storm', 'snow'].includes(kind)
+      ? s.replace('</svg>', '<ellipse cx="45" cy="25" rx="15" ry="5" fill="#fff" opacity=".4" transform="rotate(-24 45 25)"/></svg>') : s;
+  };
+
+  /* ---------- rain curtain + lightning ---------- */
+  let kind = '', rh = 180, curtain = null, bolt = null, glow = null, stTimer = 0;
+  const mk = id => { const e = document.createElement('div'); e.id = id; e.setAttribute('aria-hidden', 'true'); return e; };
+
+  function fit() {                                    // how far the rain falls: from the cloud down to the hill
+    if (!curtain || !big.offsetHeight) return;
+    let h = (panel.offsetTop || 0) - (big.offsetTop || 0) - big.offsetHeight * 0.61 + 6;
+    if (!isFinite(h) || h <= 0) h = 170;
+    rh = Math.round(Math.max(90, Math.min(300, h)));
+    big.style.setProperty('--rh', rh + 'px');
+  }
+
+  function strike() {
+    if (!bolt || kind !== 'storm') return;
+    const pts2 = []; let x = 34 + Math.random() * 58, y = 0;
+    pts2.push([x, 0]);
+    while (y < rh * 0.92) { y += 16 + Math.random() * 16; x = Math.max(10, Math.min(116, x + (Math.random() - 0.5) * 30)); pts2.push([x, Math.min(y, rh)]); }
+    const d = 'M' + pts2.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+    const b = pts2[Math.floor(pts2.length / 2)];
+    const br = `M${b[0].toFixed(1)},${b[1].toFixed(1)} l${(Math.random() < .5 ? -1 : 1) * 22},26 l${(Math.random() < .5 ? -1 : 1) * 8},22`;
+    const line = (p, w, c) => `<path d="${p}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    bolt.innerHTML = `<svg viewBox="0 0 126 ${rh}" preserveAspectRatio="none">${line(d, 7, 'rgba(130,185,255,.7)')}${line(d, 2.6, '#ffffff')}${line(br, 1.8, '#dcecff')}</svg>`;
+    [bolt, glow].forEach(e => { e.classList.remove('on'); void e.offsetWidth; e.classList.add('on'); });
+    big.classList.add('strike');
+    const f = card.querySelector('.flash');
+    if (f) { f.style.animation = 'none'; void f.offsetWidth; f.style.animation = 'thunderFlash .7s'; }
+    setTimeout(() => { big.classList.remove('strike'); if (f) f.style.animation = ''; }, 800);
+    if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+  }
+  function loop(first) {
+    clearTimeout(stTimer);
+    if (kind !== 'storm' || still) return;
+    stTimer = setTimeout(() => { if (!document.hidden && Tabs.active === 'weather') strike(); loop(false); }, first ? 1200 : 3500 + Math.random() * 4500);
+  }
+
+  function rebuild() {                                // runs after every redraw of the big icon
+    clearTimeout(stTimer);
+    curtain = bolt = glow = null;
+    if (!data) return;
+    kind = kindOf(data.code);
+    const wet = kind === 'rain' || kind === 'storm';
+    big.classList.toggle('hascurtain', wet);
+    if (!wet) return;
+    const c = data.code;
+    const n = kind === 'storm' ? 38 : [65, 82, 66, 67].includes(c) ? 34 : [55, 57, 63, 81].includes(c) ? 24 : 14;
+    glow = mk('cloudGlow'); curtain = mk('rainCurtain'); bolt = mk('bolt');
+    curtain.innerHTML = Array.from({ length: n }, () =>
+      `<i style="left:${(Math.random() * 98).toFixed(1)}%;height:${(12 + Math.random() * 16).toFixed(0)}px;` +
+      `--d:${(0.7 + Math.random() * 0.5).toFixed(2)}s;--dl:-${(Math.random() * 1.2).toFixed(2)}s"></i>`).join('');
+    [glow, curtain, bolt].forEach(e => big.appendChild(e));
+    requestAnimationFrame(fit); setTimeout(fit, 500);
+    loop(true);
+  }
+  const prevPaint = window.paintWeather;
+  window.paintWeather = function () { prevPaint(); rebuild(); };
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(panel);
+  window.addEventListener('resize', fit);
+
+  /* the background rain across the whole screen becomes a softer backdrop */
+  const prevFx = window.setFx;
+  window.setFx = function (m, n) { return prevFx(m, m === 'rain' ? Math.round(n * 0.55) : n); };
+
+  rebuild();
+})();
