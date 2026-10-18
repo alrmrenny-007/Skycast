@@ -1306,3 +1306,72 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
 
   rebuild();
 })();
+
+/* =========================================================
+   FONTS
+   - new default font (Outfit) and a font picker in Settings
+   - fonts come from Google Fonts; if they cannot load, the phone's own font is used
+   ========================================================= */
+(function fonts() {
+  const FONTS = {
+    outfit:  { name: 'Outfit',            fam: '"Outfit"',            gf: 'Outfit:wght@300;400;500;600;700' },
+    poppins: { name: 'Poppins',           fam: '"Poppins"',           gf: 'Poppins:wght@300;400;500;600;700' },
+    nunito:  { name: 'Nunito (rounded)',  fam: '"Nunito"',            gf: 'Nunito:wght@300;400;600;700;800' },
+    manrope: { name: 'Manrope',           fam: '"Manrope"',           gf: 'Manrope:wght@300;400;500;600;700;800' },
+    jakarta: { name: 'Plus Jakarta Sans', fam: '"Plus Jakarta Sans"', gf: 'Plus+Jakarta+Sans:wght@300;400;500;600;700' },
+    grotesk: { name: 'Space Grotesk',     fam: '"Space Grotesk"',     gf: 'Space+Grotesk:wght@300;400;500;600;700' },
+    system:  { name: 'Phone default',     fam: 'system-ui',           gf: '' }
+  };
+  const FALLBACK = ', system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif';   // also covers Hindi and other scripts
+  const stack = k => FONTS[k].fam + FALLBACK;
+  const loaded = {};
+  function load(k) {
+    if (loaded[k] || !FONTS[k].gf) return;
+    loaded[k] = true;
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=' + FONTS[k].gf + '&display=swap';
+    document.head.appendChild(l);
+  }
+
+  let cur = Store.get('font', 'outfit');
+  if (!FONTS[cur]) cur = 'outfit';
+
+  const css = document.createElement('style');
+  css.textContent = `
+    body, button, input, select, textarea { font-family: var(--font); }
+    .temp { font-weight: 600; letter-spacing: -2px; }
+    h2, .big { font-weight: 600; }
+    .tlabels, .badge { letter-spacing: .04em; }
+    .fontgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .fbtn { border: 0; border-radius: 16px; padding: 10px 12px; background: var(--well); color: var(--ink); cursor: pointer; text-align: left; }
+    .fbtn small { display: block; font-size: 12px; color: var(--ink2); margin-top: 2px; }
+    .fbtn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); background: rgba(255,255,255,.2); }
+  `;
+  document.head.appendChild(css);
+
+  const grid = document.createElement('div');
+  grid.className = 'fontgrid';
+  function paint() {
+    grid.innerHTML = Object.keys(FONTS).map(k =>
+      `<button type="button" class="fbtn" data-k="${k}" aria-pressed="${k === cur}" style='font-family:${stack(k)}'>` +
+      `<span style="font-size:24px;font-weight:600">24°</span><small>${FONTS[k].name}</small></button>`).join('');
+  }
+  function apply(k) {
+    cur = k;
+    document.documentElement.style.setProperty('--font', stack(k));
+    load(k); Store.set('font', k); paint();
+  }
+  grid.addEventListener('click', e => { const b = e.target.closest('.fbtn'); if (b && FONTS[b.dataset.k]) apply(b.dataset.k); });
+
+  /* the picker, in Settings just above "Help" (the other fonts are only fetched when Settings is opened) */
+  const sheet = document.querySelector('#settings .sheetBody');
+  if (sheet) {
+    const h = document.createElement('h4'); h.textContent = 'Font';
+    const help = Array.prototype.find.call(sheet.querySelectorAll('h4'), x => x.textContent === 'Help');
+    if (help) { sheet.insertBefore(h, help); sheet.insertBefore(grid, help); } else { sheet.appendChild(h); sheet.appendChild(grid); }
+  }
+  const prevOpen = window.openSettings;
+  window.openSettings = function (open) { prevOpen(open); if (open) Object.keys(FONTS).forEach(load); };
+
+  apply(cur);
+})();
