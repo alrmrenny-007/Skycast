@@ -40,7 +40,7 @@ app.get('/manifest.json', (req, res) => {
 });
 
 const SW = `
-const CACHE = 'skycast-v4';
+const CACHE = 'skycast-v5';
 const SHELL = ['/', '/app.js', '/ratings.js', '/extras.js', '/manifest.json', '/icon-192.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -62,9 +62,17 @@ self.addEventListener('fetch', e => {
     }).catch(() => caches.match(req).then(r => r || caches.match('/')))
   );
 });
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Skycast', {
+    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag || 'skycast', data: { url: d.url || '/' }
+  }));
+});
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(list => (list.length ? list[0].focus() : self.clients.openWindow('/'))));
+  const url = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(list => (list.length ? list[0].focus() : self.clients.openWindow(url))));
 });
 `;
 app.get('/sw.js', (req, res) => {
@@ -209,10 +217,8 @@ function buildNowcast(m, curTime) {
   return w ? { state: 'starts', startT: w.t, inMin: mins(w) } : { state: 'none' };
 }
 
-app.get('/api/weather', async (req, res) => {
-  const { lat, lon } = req.query;
-  if (!lat || !lon) return res.status(400).json({ error: 'lat and lon needed' });
-  try {
+async function getWeather(lat, lon) {
+  {
     const w = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&current=temperature_2m,weather_code,is_day,cloud_cover` +
       `&hourly=temperature_2m,weather_code,is_day` +
@@ -226,12 +232,15 @@ app.get('/api/weather', async (req, res) => {
     const n = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&minutely_15=precipitation&timezone=auto&forecast_days=2`;
     const a = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi`;
+    const yq = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min&past_days=1&forecast_days=1&timezone=auto`;
 
-    const [wr, ex, nc, ar] = await Promise.all([
+    const [wr, ex, nc, ar, yr] = await Promise.all([
       fetch(w).then(r => r.json()),
       fetch(x).then(r => r.json()).catch(() => null),
       fetch(n).then(r => r.json()).catch(() => null),
-      fetch(a).then(r => r.json()).catch(() => ({}))
+      fetch(a).then(r => r.json()).catch(() => ({})),
+      fetch(yq).then(r => r.json()).catch(() => null)
     ]);
     if (!wr.current) throw new Error('no data');
 
@@ -260,6 +269,20 @@ app.get('/api/weather', async (req, res) => {
       et: eh ? rd(at(eh.evapotranspiration, j + k), 2) : null
     }));
 
+    // yesterday at the same hour, plus yesterday's high and low (for "3° warmer than yesterday")
+    let yesterday = null;
+    try {
+      if (yr && yr.hourly && yr.daily) {
+        const d0 = new Date(nowHour); d0.setDate(d0.getDate() - 1);
+        const pad = n => String(n).padStart(2, '0');
+        const target = `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}T${pad(d0.getHours())}:00`;
+        const yi = yr.hourly.time.indexOf(target);
+        if (yi >= 0 && yr.hourly.temperature_2m[yi] != null) {
+          yesterday = { temp: Math.round(yr.hourly.temperature_2m[yi]), max: Math.round(yr.daily.temperature_2m_max[0]), min: Math.round(yr.daily.temperature_2m_min[0]) };
+        }
+      }
+    } catch (e) { yesterday = null; }
+
     const daily = wr.daily.time.map((d, k) => ({
       d,
       max: Math.round(wr.daily.temperature_2m_max[k]),
@@ -269,7 +292,7 @@ app.get('/api/weather', async (req, res) => {
       sunset: wr.daily.sunset[k]
     }));
 
-    res.json({
+    return {
       temp: Math.round(cur.temperature_2m),
       code: cur.weather_code,
       isDay: cur.is_day === 1,
@@ -279,11 +302,21 @@ app.get('/api/weather', async (req, res) => {
       sunset: wr.daily.sunset[0],
       aqi: ar.current ? ar.current.us_aqi : null,
       nowcast: buildNowcast(nc && nc.minutely_15, cur.time),
+      yesterday,
       hourly,
       daily
-    });
-  } catch (e) { res.status(500).json({ error: 'Weather failed' }); }
+    };
+  }
+}
+
+app.get('/api/weather', async (req, res) => {
+  const { lat, lon } = req.query;
+  if (!lat || !lon) return res.status(400).json({ error: 'lat and lon needed' });
+  try { res.json(await getWeather(lat, lon)); } catch (e) { res.status(500).json({ error: 'Weather failed' }); }
 });
+
+// Push alerts (optional): needs push.js next to this file and a few settings in Vercel.
+try { require('./push.js')(app, { express, getWeather }); } catch (e) { console.log('Push alerts are not active:', e.message); }
 
 if (require.main === module) {
   app.listen(3000, () => console.log('http://localhost:3000'));

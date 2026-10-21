@@ -1375,3 +1375,197 @@ Soil moisture is fine. No watering needed today. ¦ L'humidité du sol est corre
 
   apply(cur);
 })();
+
+/* =========================================================
+   DETAILS, RAIN CHART, "WARMER THAN YESTERDAY" AND PUSH ALERTS
+   - "Details" button on the weather screen: humidity, wind, UV, air, cloud, rain, sun, moon
+     and a 12-hour rain chance chart
+   - a chip like "3° warmer than yesterday"
+   - Settings > Push alerts: rain soon, frost and heat, best run window (even when the app is closed)
+   ========================================================= */
+(function detailsAndPush() {
+  const card = document.getElementById('card'), hero = document.querySelector('.hero');
+  if (!card || !hero) return;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .rbars { display: flex; gap: 5px; height: 100px; align-items: flex-end; margin: 6px 0 8px; }
+    .rb { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+    .rb span { display: block; width: 100%; border-radius: 6px 6px 0 0; min-height: 3px; background: linear-gradient(180deg, #9fd4ff, #3d8bff); }
+    .rb em { font-style: normal; font-size: 10px; min-height: 12px; }
+    .rb small { font-size: 10px; color: var(--ink2); }
+    .chk { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 6px 0; }
+    .chk input { width: 20px; height: 20px; accent-color: var(--good); }
+    .sw:disabled { opacity: .4; cursor: default; }
+    #detBody h3 { margin: 14px 0 8px; }
+  `;
+  document.head.appendChild(css);
+
+  function makeSheet(id, title, inner) {
+    const s = document.createElement('div');
+    s.className = 'sheet'; s.id = id; s.hidden = true;
+    s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-labelledby', id + 'T');
+    s.innerHTML = '<div class="sheetBack" data-x="1"></div><div class="sheetBody"><div class="row"><h2 id="' + id + 'T">' + title + '</h2>' +
+      '<button type="button" class="x" data-x="1" aria-label="Close">✕</button></div>' + inner + '</div>';
+    s.addEventListener('click', e => { if (e.target.closest('[data-x]')) s.hidden = true; });
+    card.appendChild(s);
+    return s;
+  }
+
+  /* ---------- Details + rain chart ---------- */
+  const det = makeSheet('detailsSheet', 'Details', '<div id="detBody"></div>');
+  const detBody = document.getElementById('detBody');
+
+  function paintDetails() {
+    if (!data || !R) return;
+    const d = data, d0 = d.daily[0], y = d.yesterday;
+    const hours = (typeof Ctx !== 'undefined' && Ctx && Ctx.hours) ? Ctx.hours : (d.hourly || []);
+    const h0 = hours[0] || {}, next12 = hours.slice(0, 12), has = typeof h0.pop === 'number';
+    const uvPeak = Math.max(0, ...hours.filter(h => h.isDay).map(h => h.uv || 0));
+    const maxPop = Math.max(0, ...next12.map(h => h.pop || 0));
+    const rain24 = Math.round(hours.reduce((s, h) => s + (h.precip || 0), 0) * 10) / 10;
+    const sun = R.sunInfo(d.now, d.sunrise, d.sunset, d.daily[1] ? d.daily[1].sunrise : null);
+    const lit = Math.round((1 - Math.cos(2 * Math.PI * curPhase)) / 2 * 100);
+    const sc = d.temp, f = Prefs.temp === 'F' ? 1.8 : 1;
+
+    let html = '<h3>Rain chance, next 12 hours</h3>';
+    if (has && next12.length) {
+      const wet = next12.reduce((a, b) => ((b.pop || 0) > (a.pop || 0) ? b : a), next12[0]);
+      html += '<div class="rbars">' + next12.map((h, i) => {
+        const p = h.pop || 0, t = i === 0 ? 'Now' : R.fmtShort(h.t);
+        return `<div class="rb" role="img" aria-label="${i === 0 ? 'Now' : R.fmtHour(h.t)}: ${p}% chance of rain"><em>${p >= 20 ? p + '%' : ''}</em>` +
+          `<span style="height:${Math.max(3, p)}%"></span><small>${t}</small></div>`;
+      }).join('') + '</div>' +
+        `<p class="note">${maxPop >= 20 ? 'Wettest around ' + R.fmtHour(wet.t) + ' (' + wet.pop + '% chance).' : 'No rain expected in the next 12 hours.'}</p>`;
+    } else html += '<p class="note">Rain chances are still loading. Try again in a moment.</p>';
+
+    html += '<h3>Right now</h3><div class="tiles">' +
+      tile('Humidity', has ? h0.humidity + '%' : '--', h0.humidity > 85 ? 'warn' : 'ok', h0.humidity > 70 ? 'Feels sticky' : 'Comfortable') +
+      tile('Wind', has ? fmtW(h0.wind) : '--', h0.wind > 40 ? 'bad' : h0.wind > 25 ? 'warn' : 'ok', h0.wind > 25 ? 'Strong wind' : h0.wind > 15 ? 'Breezy' : 'Calm') +
+      tile('UV index', has ? h0.uv : '--', uvPeak >= 8 ? 'bad' : uvPeak >= 6 ? 'warn' : 'ok', 'Peak today ' + uvPeak) +
+      tile('Air quality', d.aqi != null ? d.aqi : '--', d.aqi > 100 ? 'bad' : d.aqi > 50 ? 'warn' : 'ok', d.aqi != null ? aqiLabel(d.aqi) : 'No data') +
+      tile('Cloud cover', d.cloud + '%', 'ok', d.cloud < 20 ? 'Clear' : d.cloud < 60 ? 'Some cloud' : 'Mostly cloudy') +
+      tile('Rain 24h', has ? rain24 + ' mm' : '--', rain24 >= 3 ? 'wet' : 'ok', has ? 'Up to ' + maxPop + '% chance' : 'No data') +
+      tile('Sunrise', R.fmtTime(sun.rise), 'ok', 'Today') + tile('Sunset', R.fmtTime(sun.set), 'ok', 'Today') +
+      tile('Moon', lit + '%', 'ok', moonName(curPhase)) + '</div>';
+
+    if (y) {
+      const diff = Math.round((sc - y.temp) * f);
+      html += '<h3>Compared with yesterday</h3><div class="tiles">' +
+        tile('At this time', (diff > 0 ? '+' : '') + diff + '°', 'ok', diff === 0 ? 'The same' : diff > 0 ? 'Warmer' : 'Cooler') +
+        tile('High / Low', fmtT(d0.max) + ' / ' + fmtT(d0.min), 'ok', 'Yesterday ' + fmtT(y.max) + ' / ' + fmtT(y.min)) + '</div>';
+    }
+    detBody.innerHTML = html;
+  }
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'chipx'; btn.id = 'detailsBtn'; btn.textContent = 'ⓘ Details';
+  btn.addEventListener('click', () => { paintDetails(); det.hidden = false; });
+  hero.appendChild(btn);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') det.hidden = true; });
+
+  /* ---------- "3° warmer than yesterday" chip ---------- */
+  const prevPaint = window.paintWeather;
+  window.paintWeather = function () {
+    prevPaint();
+    const el = document.getElementById('chips');
+    if (!data || !data.yesterday || !el) return;
+    const diff = Math.round((data.temp - data.yesterday.temp) * (Prefs.temp === 'F' ? 1.8 : 1));
+    el.insertAdjacentHTML('beforeend', `<span class="chipx mute">🌡 ${diff === 0 ? 'Same as yesterday' : Math.abs(diff) + '° ' + (diff > 0 ? 'warmer' : 'cooler') + ' than yesterday'}</span>`);
+  };
+
+  /* ---------- Push alerts (in Settings) ---------- */
+  const sheet = document.querySelector('#settings .sheetBody');
+  if (!sheet) return;
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const P = { status: null, sub: null, prefs: Object.assign({ rain: true, frost: true, run: true, place: null }, Store.get('push', {})) };
+
+  const box = document.createElement('div');
+  box.id = 'pushBox';
+  box.innerHTML = '<p class="note" id="pushNote">Checking…</p>' +
+    '<div class="row"><span>Alerts when the app is closed</span><button type="button" class="sw" id="pushSw" role="switch" aria-checked="false" aria-label="Push alerts" disabled></button></div>' +
+    '<div id="pushOpts" hidden>' +
+    '<label class="chk"><input type="checkbox" data-k="rain"> Rain starting soon</label>' +
+    '<label class="chk"><input type="checkbox" data-k="frost"> Frost and heat warnings</label>' +
+    '<label class="chk"><input type="checkbox" data-k="run"> Best run window</label>' +
+    '<p class="note" id="pushPlace"></p><button type="button" class="linkbtn" id="pushHere">Use the current city for alerts</button>' +
+    '<p class="note" style="margin-top:8px">Your city is kept on the server only to send these alerts. Turning them off deletes it.</p></div>';
+  const h = document.createElement('h4'); h.textContent = 'Push alerts';
+  const help = Array.prototype.find.call(sheet.querySelectorAll('h4'), x => x.textContent === 'Help');
+  if (help) { sheet.insertBefore(h, help); sheet.insertBefore(box, help); } else { sheet.appendChild(h); sheet.appendChild(box); }
+
+  const sw = document.getElementById('pushSw');
+  const note = t => { document.getElementById('pushNote').textContent = t; };
+  const toKey = b => { const p = '='.repeat((4 - b.length % 4) % 4), s = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, c => c.charCodeAt(0)); };
+  const json = { 'Content-Type': 'application/json' };
+
+  function render() {
+    sw.setAttribute('aria-checked', !!P.sub);
+    document.getElementById('pushOpts').hidden = !P.sub;
+    box.querySelectorAll('input[data-k]').forEach(i => { i.checked = P.prefs[i.dataset.k] !== false; });
+    const pl = P.prefs.place;
+    document.getElementById('pushPlace').textContent = pl ? 'Alerts are for ' + pl.name + '.' : '';
+  }
+  function post() {
+    const pl = P.prefs.place || curPlace;
+    return fetch('/api/push/subscribe', { method: 'POST', headers: json, keepalive: true, body: JSON.stringify({
+      sub: P.sub.toJSON(), place: pl && { name: pl.name, lat: pl.lat, lon: pl.lon },
+      alerts: { rain: P.prefs.rain !== false, frost: P.prefs.frost !== false, run: P.prefs.run !== false },
+      prefs: { crop: Prefs.crop, temp: Prefs.temp, limits: Prefs.limits } }) });
+  }
+  async function enable() {
+    try {
+      if (await Notification.requestPermission() !== 'granted') { note('Notifications are blocked. Allow them in your browser settings.'); return; }
+      const reg = await navigator.serviceWorker.ready;
+      P.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(P.status.key) });
+      if (!P.prefs.place && curPlace) P.prefs.place = { name: curPlace.name, lat: curPlace.lat, lon: curPlace.lon };
+      Store.set('push', P.prefs);
+      if (!(await post()).ok) throw new Error('not saved');
+      note('Push alerts are on.');
+    } catch (e) {
+      note('Could not turn on push alerts. Try again.');
+      try { if (P.sub) await P.sub.unsubscribe(); } catch (x) { /* ignore */ }
+      P.sub = null;
+    }
+    render();
+  }
+  async function disable() {
+    try {
+      const ep = P.sub.endpoint;
+      await P.sub.unsubscribe();
+      await fetch('/api/push/unsubscribe', { method: 'POST', headers: json, body: JSON.stringify({ endpoint: ep }) });
+    } catch (e) { /* ignore */ }
+    P.sub = null; note('Push alerts are off.'); render();
+  }
+  sw.addEventListener('click', () => { if (P.sub) disable(); else enable(); });
+  box.addEventListener('change', e => {
+    const k = e.target.dataset && e.target.dataset.k;
+    if (!k) return;
+    P.prefs[k] = e.target.checked; Store.set('push', P.prefs);
+    if (P.sub) post();
+  });
+  document.getElementById('pushHere').addEventListener('click', () => {
+    if (!curPlace || !P.sub) return;
+    P.prefs.place = { name: curPlace.name, lat: curPlace.lat, lon: curPlace.lon };
+    Store.set('push', P.prefs); post(); render();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && P.sub) post(); });   // keep crop, limits and units up to date
+
+  async function init() {
+    if (!supported) {
+      note(/iphone|ipad|ipod/i.test(navigator.userAgent) && !isStandalone() ? 'On iPhone, add Skycast to your home screen first, then come back here.' : 'Push alerts are not supported in this browser.');
+      return;
+    }
+    try { P.status = await (await fetch('/api/push/status')).json(); } catch (e) { P.status = null; }
+    if (!P.status || !P.status.enabled) {
+      note('Not set up on the server yet' + (P.status && P.status.missing && P.status.missing.length ? ' (missing: ' + P.status.missing.join(', ') + ')' : '') + '.');
+      return;
+    }
+    try { P.sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch (e) { P.sub = null; }
+    sw.disabled = false;
+    note(P.sub ? 'Push alerts are on.' : 'Get a notification even when Skycast is closed.');
+    render();
+  }
+  let inited = false;
+  const prevOpen = window.openSettings;
+  window.openSettings = function (open) { prevOpen(open); if (open && !inited) { inited = true; init(); } };
+})();
